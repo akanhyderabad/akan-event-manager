@@ -1,0 +1,143 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Rich-text event description (HTML authored in the admin dashboard). */
+.event-body :where(p, ul, ol) {
+  margin: 0 0 0.75em;
+}
+.event-body :where(p, ul, ol):last-child {
+  margin-bottom: 0;
+}
+.event-body ul,
+.event-body ol {
+  padding-left: 1.25em;
+}
+.event-body li {
+  margin-bottom: 0.25em;
+}
+.event-body a {
+  color: inherit;
+  text-decoration: underline;
+}
+.event-body strong,
+.event-body b {
+  color: inherit;
+  font-weight: 600;
+}
+.event-body h1,
+.event-body h2,
+.event-body h3 {
+  color: inherit;
+  font-weight: 600;
+  margin: 0 0 0.5em;
+}
+
+/* Event listings — responsive grid on desktop, swipeable carousel on mobile. */
+.events-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: clamp(20px, 2.5vw, 32px) clamp(16px, 2vw, 24px);
+}
+@media (max-width: 640px) {
+  .events-grid {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: 82%;
+    gap: 14px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 10px;
+    scrollbar-width: none;
+  }
+  .events-grid::-webkit-scrollbar {
+    display: none;
+  }
+  .events-grid > * {
+    scroll-snap-align: start;
+  }
+}
+
+/* Event filter pills — always a single horizontal scrollable row. */
+.filter-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.filter-row::-webkit-scrollbar {
+  display: none;
+}
+.filter-row > * {
+  flex-shrink: 0;
+}
+
+/* Main events page — header nav vs hamburger. */
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+.site-menu-btn {
+  display: none;
+}
+@media (max-width: 768px) {
+  .site-nav {
+    display: none;
+  }
+  .site-menu-btn {
+    display: inline-flex;
+  }
+}
+
+/* Day / Night differentiator toggle — stacks full-width on small screens. */
+.daynight-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+}
+@media (max-width: 560px) {
+  .daynight-toggle {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    max-width: 360px;
+    margin-left: auto;
+    margin-right: auto;
+    border-radius: 20px;
+  }
+  .daynight-toggle > button {
+    width: 100%;
+  }
+  .daynight-divider {
+    display: none;
+  }
+}

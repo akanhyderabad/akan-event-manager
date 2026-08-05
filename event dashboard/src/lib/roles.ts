@@ -1,0 +1,35 @@
+/**
+ * Client-safe role enums. Do NOT import DB or server code here — this file is
+ * bundled into client components (AdminShell, Staff page).
+ */
+export type UserRole = 'host' | 'manager' | 'cashier' | 'captain' | 'entry';
+export const ALL_ROLES: UserRole[] = ['host', 'manager', 'cashier', 'captain', 'entry'];
+export const ROLE_LABEL: Record<UserRole, string> = {
+  host: 'Host',
+  manager: 'Manager',
+  cashier: 'Cashier',
+  captain: 'Captain',
+  entry: 'Entry / Bouncer',
+};
+
+export interface PublicUser {
+  id: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  role: UserRole;
+  active: boolean;
+  /**
+   * Custom page-access override. `null` = inherit the role's default page set;
+   * `string[]` = explicit allow-list of page ids (see lib/permissions.ts).
+   */
+  permissions: string[] | null;
+  created_at: number;
+  created_by: string | null;
+  /**
+   * Last successful sign-in timestamp (ms epoch). NULL when the user was
+   * invited but never logged in — drives the "Pending" status pill on the
+   * Team section.
+   */
+  last_login_at: number | null;
+}
