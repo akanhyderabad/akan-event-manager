@@ -78,7 +78,10 @@ function ConfirmedInner() {
       }
     }
     if (fire) {
-      trackReservationSuccess({ reservationId: rid || `rsvp_${Date.now()}`, eventName: 'Reservation' });
+      // No synthetic fallback id: without the real rid, Meta events are skipped
+      // inside trackReservationSuccess (the server CAPI Lead already counted
+      // the booking) while GA still fires with its own synthetic id.
+      trackReservationSuccess({ reservationId: rid || undefined, eventName: 'Reservation' });
     }
   }, [rid]);
 

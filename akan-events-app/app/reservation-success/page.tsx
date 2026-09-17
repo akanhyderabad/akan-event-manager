@@ -35,7 +35,10 @@ export default function ReservationSuccessPage() {
         window.sessionStorage.setItem(key, '1');
       } catch { /* storage blocked — fire anyway */ }
     }
-    trackReservationSuccess({ reservationId: ref || `rsvp_${Date.now()}`, eventName: 'Reservation' });
+    // No synthetic fallback id: without the real ref, Meta events are skipped
+    // inside trackReservationSuccess (the server CAPI Lead already counted the
+    // booking) while GA still fires with its own synthetic transaction id.
+    trackReservationSuccess({ reservationId: ref || undefined, eventName: 'Reservation' });
   }, []);
 
   return (

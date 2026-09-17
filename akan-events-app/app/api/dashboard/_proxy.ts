@@ -18,6 +18,23 @@ export function dashboardProxyHeaders(req: NextRequest, initHeaders?: HeadersIni
   const forwardedFor = req.headers.get('x-forwarded-for');
   if (forwardedFor) headers.set('x-forwarded-for', forwardedFor);
 
+  // Forward the browser's cookies and user-agent to the dashboard.
+  //
+  // The dashboard's server-side Meta Conversions API events (Lead on a public
+  // reservation, Purchase on payment verify) read the visitor's `_fbp`/`_fbc`
+  // cookies and user-agent off the request they receive. Until these two
+  // lines, THIS proxy was the request they received — a server-to-server
+  // fetch with no cookie header and Node's default user-agent — so every
+  // conversion booked through this app reached Meta stripped of its browser
+  // identifiers, with a visibly lower match quality than the same booking
+  // made on the dashboard's own pages. The cookies forwarded here are the
+  // customer-site's own (Meta pixel, analytics); the dashboard ignores any
+  // cookie name it does not read.
+  const cookie = req.headers.get('cookie');
+  if (cookie) headers.set('cookie', cookie);
+  const userAgent = req.headers.get('user-agent');
+  if (userAgent) headers.set('user-agent', userAgent);
+
   return headers;
 }
 
