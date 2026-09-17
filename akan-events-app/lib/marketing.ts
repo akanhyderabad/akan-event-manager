@@ -81,16 +81,31 @@ export function trackReservationAction(action: string, input: EventTrackingInput
  *   backward-compat). Both use `eventID` = reservation id so they dedupe against
  *   any server-side CAPI event for the same booking.
  */
-export function trackReservationSuccess(input: { reservationId: string; eventName?: string; pax?: number }): void {
+export function trackReservationSuccess(input: { reservationId?: string; eventName?: string; pax?: number }): void {
   if (typeof window === 'undefined') return;
   const { reservationId, eventName, pax } = input;
+
+  // GA keeps its old behaviour: it always fires, with a synthetic transaction
+  // id when the real one is missing (generate_lead is not deduplicated by
+  // GA anyway, so the synthetic id costs nothing there).
+  const gaTransactionId = reservationId || `rsvp_${Date.now()}`;
+
+  // Meta is different. The dashboard's server ALWAYS sends a CAPI `Lead` for
+  // this booking, keyed by the real reservation id, and Meta merges browser
+  // and server events only when the names AND ids match. Firing the browser
+  // side with a made-up `rsvp_<timestamp>` id (the old fallback) therefore
+  // GUARANTEED a duplicate: one booking counted twice, and — because the
+  // fallback minted a fresh id on every mount — each refresh of this page
+  // added another. When the real id is missing, the correct move is to fire
+  // nothing: the server event has the booking covered.
+  const fbEligible = !!reservationId;
 
   // The gtag/fbq tags load "afterInteractive", so on a fresh page load (e.g. the
   // /reservation-success landing page) this can run before window.gtag / fbq
   // exist. Retry every 250ms for up to ~8s, firing each tag once it's ready so
   // the conversion is never silently dropped.
   let gaDone = false;
-  let fbDone = false;
+  let fbDone = !fbEligible;
   let tries = 0;
   const attempt = () => {
     if (!gaDone && typeof window.gtag === 'function') {
@@ -101,27 +116,31 @@ export function trackReservationSuccess(input: { reservationId: string; eventNam
           method: 'event_reservation',
           event_name: eventName,
           pax,
-          transaction_id: reservationId,
+          transaction_id: gaTransactionId,
         });
       } catch { /* ignore */ }
       gaDone = true;
     }
     if (!fbDone && typeof window.fbq === 'function') {
       try {
-        // Meta standard events, both keyed by reservation id (eventID) so they
-        // dedupe against any server-side CAPI event for the same booking.
+        // Meta standard events, all keyed by the REAL reservation id (eventID)
+        // so they dedupe against the dashboard's server-side CAPI event for
+        // the same booking — this branch only runs when that id exists (see
+        // fbEligible above).
         //   - CompleteRegistration: the "successful registration" conversion a
-        //     marketer maps on the confirmation page. This is what was missing.
+        //     marketer maps on the confirmation page.
         //   - Lead: kept for backward-compat with any existing Lead-based setup.
-        // Dedup is per-event-name, so sharing the same eventID across the two
-        // does NOT collapse them into one.
+        // Dedup is per-event-name, so sharing the same eventID across the
+        // three does NOT collapse them into one — but it does collapse
+        // repeat fires of the SAME name (a page refresh) within Meta's
+        // dedup window, which is why ReservationConfirmed now carries it too.
         window.fbq('trackCustom', 'ReservationConfirmed', {
           reservation_id: reservationId,
           content_name: eventName,
           currency: 'INR',
           value: 0,
           pax,
-        });
+        }, { eventID: reservationId });
         window.fbq('track', 'CompleteRegistration', { content_name: eventName, currency: 'INR', value: 0, status: true }, { eventID: reservationId });
         window.fbq('track', 'Lead', { content_name: eventName, currency: 'INR', value: 0 }, { eventID: reservationId });
       } catch { /* ignore */ }
