@@ -106,7 +106,7 @@ function RedeemClient() {
     e.preventDefault();
     setError(null);
     if (!wallet) return;
-    if (!/^\d{4,8}$/.test(pin)) { setError('QR Code ID must be 4–8 digits.'); return; }
+    if (!/^\d{4,8}$/.test(pin)) { setError('PIN must be 4–8 digits.'); return; }
     const amt = Number(amount);
     if (!(amt > 0)) { setError('Enter a redeem amount greater than zero.'); return; }
 
@@ -263,7 +263,7 @@ function RedeemClient() {
             {error && <ErrorBox>{error}</ErrorBox>}
 
             <div>
-              <label className="label">QR Code ID <span className="text-rose-600">*</span></label>
+              <label className="label">PIN <span className="text-rose-600">*</span></label>
               <input
                 className="input input-pin"
                 type="tel"
@@ -294,8 +294,8 @@ function RedeemClient() {
                 className="input"
                 type="number"
                 inputMode="decimal"
-                min={1}
-                step={1}
+                min={0.01}
+                step={0.01}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="500"

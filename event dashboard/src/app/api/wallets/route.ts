@@ -7,6 +7,11 @@ import { getConfig } from '@/lib/db';
 import QRCode from 'qrcode';
 import type { PaymentMethod } from '@/lib/types';
 import { resolveRequestOrigin } from '@/lib/request-origin';
+import {
+  hasAtMostTwoDecimals,
+  MAX_WALLET_AMOUNT_INR,
+  parseMoneyInput,
+} from '@/lib/money';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,9 +46,19 @@ export async function POST(req: NextRequest) {
     if (!phone || typeof phone !== 'string') {
       return NextResponse.json({ ok: false, message: 'Phone is required.' }, { status: 400 });
     }
-    const fee = Number(entryFee);
-    if (!(fee >= 0)) {
-      return NextResponse.json({ ok: false, message: 'Invalid entry fee.' }, { status: 400 });
+    const fee = parseMoneyInput(entryFee);
+    const cover = coverIssued != null && !isNaN(Number(coverIssued)) ? parseMoneyInput(coverIssued) : undefined;
+    if (!(fee >= 0) || !hasAtMostTwoDecimals(fee)) {
+      return NextResponse.json({ ok: false, message: 'Entry fee must be non-negative with up to 2 decimal places.' }, { status: 400 });
+    }
+    if (fee > MAX_WALLET_AMOUNT_INR) {
+      return NextResponse.json({ ok: false, message: `Entry fee cannot exceed Rs ${MAX_WALLET_AMOUNT_INR.toLocaleString('en-IN')}.` }, { status: 400 });
+    }
+    if (cover !== undefined && (!(cover >= 0) || !hasAtMostTwoDecimals(cover))) {
+      return NextResponse.json({ ok: false, message: 'Cover amount must be non-negative with up to 2 decimal places.' }, { status: 400 });
+    }
+    if ((cover ?? 0) > MAX_WALLET_AMOUNT_INR) {
+      return NextResponse.json({ ok: false, message: `Wallet amount cannot exceed Rs ${MAX_WALLET_AMOUNT_INR.toLocaleString('en-IN')}.` }, { status: 400 });
     }
     if (!VALID_METHODS.includes(paymentMethod)) {
       return NextResponse.json({ ok: false, message: 'Invalid payment method.' }, { status: 400 });
@@ -55,7 +70,7 @@ export async function POST(req: NextRequest) {
       email: email ? String(email).trim() : undefined,
       pax: Number(pax) || 1,
       entryFee: fee,
-      coverIssued: coverIssued != null && !isNaN(Number(coverIssued)) ? Number(coverIssued) : undefined,
+      coverIssued: cover,
       paymentMethod,
       issuedBy: session.name,
       tableId: tableId ? String(tableId) : undefined,

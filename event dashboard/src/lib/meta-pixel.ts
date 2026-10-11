@@ -20,7 +20,11 @@ export type CapiEventName =
   | 'InitiateCheckout'
   | 'Lead'
   | 'Purchase'
-  | 'Contact';
+  | 'Contact'
+  | 'EventReservationClick'
+  | 'EventGuestCountSelected'
+  | 'EventReservationSubmitted'
+  | 'EventReservationConfirmed';
 
 export interface CapiUserData {
   /** SHA-256 hashed phone numbers, e.g. ["abc123..."] — must be pre-hashed. */

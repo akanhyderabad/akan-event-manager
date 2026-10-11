@@ -20,6 +20,13 @@ type EventTrackingInput = {
   pax?: number;
 };
 
+const META_CUSTOM_EVENTS = {
+  reservationClick: 'EventReservationClick',
+  guestCountSelected: 'EventGuestCountSelected',
+  reservationSubmitted: 'EventReservationSubmitted',
+  reservationConfirmed: 'EventReservationConfirmed',
+} as const;
+
 /** Public event page view — Meta `ViewContent` plus a custom reserve funnel marker. */
 export function trackEventPageView(input: EventTrackingInput): void {
   if (typeof window === 'undefined') return;
@@ -41,7 +48,7 @@ export function trackReserveClick(input: EventTrackingInput): void {
   if (typeof window === 'undefined') return;
   const { eventId, eventName, pax } = input;
   try {
-    window.fbq?.('trackCustom', 'ReserveClick', {
+    window.fbq?.('trackCustom', META_CUSTOM_EVENTS.reservationClick, {
       event_id: eventId,
       event_name: eventName,
       pax,
@@ -115,7 +122,7 @@ export function trackReservationSuccess(input: { reservationId: string; eventNam
         //   - Lead: kept for backward-compat with any existing Lead-based setup.
         // Dedup is per-event-name, so sharing the same eventID across the two
         // does NOT collapse them into one.
-        window.fbq('trackCustom', 'ReservationConfirmed', {
+        window.fbq('trackCustom', META_CUSTOM_EVENTS.reservationConfirmed, {
           reservation_id: reservationId,
           content_name: eventName,
           currency: 'INR',
@@ -133,6 +140,8 @@ export function trackReservationSuccess(input: { reservationId: string; eventNam
   };
   attempt();
 }
+
+export { META_CUSTOM_EVENTS };
 
 /** Phone-number click (tel:) — GA4 `phone_click` + Meta `Contact`. */
 export function trackPhoneClick(): void {

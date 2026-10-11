@@ -7,6 +7,7 @@ import { formatMoney } from '@/lib/format';
 import { PhoneInput } from '@/components/PhoneInput';
 import { ReservationSearch, type ReservationSearchHit } from '@/components/ReservationSearch';
 import type { Event } from '@/lib/events';
+import { hasAtMostTwoDecimals, MAX_WALLET_AMOUNT_INR } from '@/lib/money';
 
 type PaymentMethod = 'cash' | 'upi' | 'card' | 'online' | 'razorpay';
 
@@ -213,6 +214,14 @@ function IssueClient() {
     if (!name.trim() || !phone.trim()) { setError('Name and phone are required.'); return; }
     if (totalPax === 0) { setError('Add at least one guest (Male / Female / Couple).'); return; }
     if (entryFinal < 0 || coverFinal < 0) { setError('Entry / cover cannot be negative.'); return; }
+    if (!hasAtMostTwoDecimals(entryFinal) || !hasAtMostTwoDecimals(coverFinal)) {
+      setError('Entry and cover amounts can have at most 2 decimal places.');
+      return;
+    }
+    if (coverFinal > MAX_WALLET_AMOUNT_INR) {
+      setError(`Wallet amount cannot exceed Rs ${MAX_WALLET_AMOUNT_INR.toLocaleString('en-IN')}.`);
+      return;
+    }
 
     setBusy(true);
     try {
@@ -421,7 +430,7 @@ function IssueClient() {
                 <div className="text-xs text-slate-500 mt-1">Cover only — entry fee is not redeemable</div>
               </div>
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                <div className="kpi-label text-amber-700">QR Code ID (share with guest)</div>
+                <div className="kpi-label text-amber-700">PIN (share with guest)</div>
                 <div className="font-mono text-4xl font-bold text-amber-700 tracking-[0.4em] mt-1">
                   {result.pin}
                 </div>
@@ -737,6 +746,8 @@ function BillCell({
           <input
             type="number"
             min={0}
+            max={100000}
+            step="0.01"
             value={inputValue}
             onChange={(e) => onChange(e.target.value)}
             className="w-full pl-4 pr-1 py-0.5 text-base font-bold text-center outline-none border-b border-slate-300 focus:border-brand-500 bg-transparent"

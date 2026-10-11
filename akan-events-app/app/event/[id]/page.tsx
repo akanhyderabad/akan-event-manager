@@ -4,6 +4,7 @@ import { getEventById } from '@/lib/constants';
 import { fetchDashboardEvent } from '@/lib/dashboard-events';
 import { collectFingerprint } from '@/lib/fingerprint';
 import {
+  META_CUSTOM_EVENTS,
   trackEventPageView,
   trackPhoneClick,
   trackReservationAction,
@@ -865,7 +866,7 @@ function BookingModal({
               {primaryBtn(() => {
                 if (guests < 1) return;
                 trackEvent(event?.dashboard_event_id, 'ticket_selected', { guests });
-                trackReservationAction('ReservationGuestCountSelected', {
+                trackReservationAction(META_CUSTOM_EVENTS.guestCountSelected, {
                   eventId: event?.dashboard_event_id,
                   eventName: event?.title || event?.name || 'Akan Event',
                   pax: guests,
@@ -906,7 +907,7 @@ function BookingModal({
               <button onClick={() => {
                 if (!validateDetails()) return;
                 trackEvent(event?.dashboard_event_id, 'checkout_started');
-                trackReservationAction('ReservationFormSubmitted', {
+                trackReservationAction(META_CUSTOM_EVENTS.reservationSubmitted, {
                   eventId: event?.dashboard_event_id,
                   eventName: event?.title || event?.name || 'Akan Event',
                   pax: totalPax,

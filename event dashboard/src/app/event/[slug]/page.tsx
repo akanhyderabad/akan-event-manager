@@ -13,6 +13,7 @@ import { EventAnalyticsTracker } from '@/components/EventAnalyticsTracker';
 import { EventCTAs } from './EventCTAs';
 import type { FieldDef } from '@/lib/events';
 import type { PublicZone } from '@/components/SeatingPicker';
+import { getTestEventCode } from '@/lib/meta-pixel';
 
 /**
  * Public event landing page. No auth, no AdminShell.
@@ -194,6 +195,7 @@ export default async function PublicEventPage({
   if (!data) return notFound();
 
   const { event, pixelId, venuePhone, venueName } = data;
+  const testEventCode = getTestEventCode();
   // Phase 3 fields. Backend may not yet ship access_mode/slots — default to
   // safe public behaviour so legacy event payloads continue to render the
   // form unchanged.
@@ -285,6 +287,7 @@ export default async function PublicEventPage({
       {pixelId && (
         <MetaPixel
           pixelId={pixelId}
+          testEventCode={testEventCode || undefined}
           events={[
             { name: 'PageView' },
             {

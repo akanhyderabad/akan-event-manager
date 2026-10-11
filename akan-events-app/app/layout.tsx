@@ -7,6 +7,7 @@ import "./globals.css";
 // integration because it is also used by the reservation flow.
 const GTM_ID = "GTM-KMBTTWVT";
 const META_PIXEL_ID = "1042947530519538";
+const META_TEST_EVENT_CODE = process.env.NEXT_PUBLIC_META_TEST_EVENT_CODE || "TEST64880";
 
 const GTM_INLINE = `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
 new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
@@ -19,6 +20,7 @@ n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
 t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,
 'script','https://connect.facebook.net/en_US/fbevents.js');
 fbq('init', '${META_PIXEL_ID}');
+fbq('set', 'test_event_code', '${META_TEST_EVENT_CODE}', '${META_PIXEL_ID}');
 fbq('track', 'PageView');`;
 
 const geistSans = Geist({

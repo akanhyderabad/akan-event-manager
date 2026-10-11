@@ -52,11 +52,11 @@ export default function CoverPage() {
         <ol className="mt-3 text-sm text-slate-700 space-y-3 list-decimal list-inside marker:text-slate-500">
           <li>
             Bouncer collects entry fee (cash, UPI, card, online, or comps) and issues a wallet
-            with QR + QR Code ID equal to the fee.
+            with a QR pass and a PIN linked to the issued wallet.
           </li>
           <li>
             Guest walks around with their QR. Any captain on the floor can redeem against the
-            wallet — amount is debited live, QR Code ID required for every redeem.
+            wallet — amount is debited live, and the PIN is required for every redeem.
           </li>
           <li>
             Wallet expires automatically at the cutoff hour of the following day (IST). After

@@ -5,6 +5,7 @@ import { lookupWallet } from '@/lib/wallet';
 import { getDb, getConfig } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
 import { getRazorpayConfig, createRazorpayOrder } from '@/lib/razorpay';
+import { MAX_WALLET_AMOUNT_INR, parseMoneyInput } from '@/lib/money';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -87,7 +88,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ token: str
   }
 
   const body = await req.json().catch(() => ({})) as { amount?: unknown };
-  const amount = Number(body.amount);
+  const amount = parseMoneyInput(body.amount);
   if (!Number.isFinite(amount) || amount < MIN_TOPUP_INR || amount > MAX_TOPUP_INR) {
     return NextResponse.json(
       { ok: false, message: `Amount must be between ₹${MIN_TOPUP_INR} and ₹${MAX_TOPUP_INR}.` },
@@ -113,6 +114,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ token: str
     return NextResponse.json(
       { ok: false, message: `This wallet is ${wallet.status}; top-up is not available.`, status: wallet.status },
       { status: 410 },
+    );
+  }
+  if ((wallet.balance + amount) > MAX_WALLET_AMOUNT_INR) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: `Wallet balance cannot exceed Rs ${MAX_WALLET_AMOUNT_INR.toLocaleString('en-IN')}. Current balance is Rs ${wallet.balance.toLocaleString('en-IN')}.`,
+      },
+      { status: 400 },
     );
   }
 

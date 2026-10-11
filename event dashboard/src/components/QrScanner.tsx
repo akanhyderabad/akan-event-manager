@@ -36,6 +36,7 @@ export function QrScanner({ onDetected, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(true);
   const [lastMiss, setLastMiss] = useState<string | null>(null);
+  const detectedRef = useRef(false);
 
   // Stable callback ref — keeps onDetected fresh without making it a dependency
   // of the start effect (which would cause restart loops on parent re-renders).
@@ -66,6 +67,7 @@ export function QrScanner({ onDetected, onClose }: Props) {
         if (cancelled) return;
 
         const Html5Qrcode = mod.Html5Qrcode;
+        const supported = mod.Html5QrcodeSupportedFormats;
         const scanner = new Html5Qrcode(containerId, { verbose: false });
         scannerRef.current = scanner;
 
@@ -78,22 +80,27 @@ export function QrScanner({ onDetected, onClose }: Props) {
         const back = cameras.find((c: { label: string }) => /back|rear|environment/i.test(c.label));
         const cameraId = (back || cameras[0]).id;
 
+        const scanConfig = {
+          fps: 14,
+          qrbox: { width: 280, height: 280 },
+          aspectRatio: 1,
+          disableFlip: true,
+          ...(supported ? { formatsToSupport: [supported.QR_CODE] } : {}),
+        };
+
         await scanner.start(
           cameraId,
-          {
-            fps: 10,
-            qrbox: { width: 260, height: 260 },
-            aspectRatio: 1,
-          },
+          scanConfig as Parameters<typeof scanner.start>[1],
           (decoded: string) => {
             // Detection callback. We may still get one stale frame after
             // safeStop() — the startedRef guard makes that a no-op.
-            if (!startedRef.current) return;
+            if (!startedRef.current || detectedRef.current) return;
             const txn = extractTxn(decoded);
             if (!txn) {
               setLastMiss(truncate(decoded, 60));
               return;
             }
+            detectedRef.current = true;
             setLastMiss(null);
             // Release the camera cleanly, THEN hand off to the parent.
             // Either path (stop succeeds or already-stopped) delivers the txn.
@@ -155,6 +162,18 @@ export function QrScanner({ onDetected, onClose }: Props) {
             </div>
           )}
         </div>
+
+        <style jsx global>{`
+          #${containerId},
+          #${containerId} > div,
+          #${containerId} video,
+          #${containerId} canvas {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+            border-radius: 0 !important;
+          }
+        `}</style>
 
         <div className="px-4 py-3 border-t border-slate-200">
           {error ? (

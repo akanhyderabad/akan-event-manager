@@ -1,22 +1,22 @@
-# CODING AGENTS: READ THIS FIRST
+# Akan Events workspace
 
-This is a **handoff bundle** from Claude Design (claude.ai/design).
+Source repository: https://github.com/akanhyderabad/akan-event-manager
 
-A user mocked up designs in HTML/CSS/JS using an AI design tool, then exported this bundle so a coding agent can implement the designs for real.
+This repository contains two independently built Next.js applications serving the same events domain. Start here before changing code or configuring a coding platform:
 
-## What you should do — IMPORTANT
+- [AGENTS.md](AGENTS.md): instructions for coding agents and developers.
+- [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md): architecture, local setup, change checklist, and integration contracts.
+- [VPS_DEPLOYMENT_RUNBOOK.md](VPS_DEPLOYMENT_RUNBOOK.md): recorded production topology, safe release procedure, verification, and rollback.
 
-**Read `akan-events-page/project/Akan Event Page - Desktop.html` in full.** The user had this file open when they triggered the handoff, so it's almost certainly the primary design they want built. Read it top to bottom — don't skim. Then **follow its imports**: open every file it pulls in (shared components, CSS, scripts) so you understand how the pieces fit together before you start implementing.
+## Repository structure
 
-**If anything is ambiguous, ask the user to confirm before you start implementing.** It's much cheaper to clarify scope up front than to build the wrong thing.
+| Directory | Purpose | Deployment |
+|---|---|---|
+| `akan-events-app/` | Public event discovery, event details, reservation UI, dashboard API proxies | Public service on loopback port 3201 |
+| `event dashboard/` | Staff/admin UI, booking/payment APIs, SQLite, passes, integrations | Dashboard service on loopback port 3200 |
+| `project/`, `akan-events-home-page/`, `Events page original design/`, ZIP bundles | Design references and original handoffs | Not production applications |
+| Planning/phase documents | Historical proposals and progress notes | Not deployment authority |
 
-## About the design files
+The production layout was last recorded on **2026-06-29**. Read the runbook and verify the server before a deployment; this repository alone does not establish today's live state. Pushing to GitHub and deploying to the VPS are separate operations. No GitHub Actions deployment workflow is checked into this repository.
 
-The design medium is **HTML/CSS/JS** — these are prototypes, not production code. Your job is to **recreate them pixel-perfectly** in whatever technology makes sense for the target codebase (React, Vue, native, whatever fits). Match the visual output; don't copy the prototype's internal structure unless it happens to fit.
-
-**Don't render these files in a browser or take screenshots unless the user asks you to.** Everything you need — dimensions, colors, layout rules — is spelled out in the source. Read the HTML and CSS directly; a screenshot won't tell you anything they don't.
-
-## Bundle contents
-
-- `akan-events-page/README.md` — this file
-- `akan-events-page/project/` — the `Akan Events page` project files (HTML prototypes, assets, components)
+There is no root package or combined build. Install and build inside each application directory. Keep the space in `event dashboard` and quote that path in commands.

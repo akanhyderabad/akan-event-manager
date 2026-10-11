@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PhoneInput } from './PhoneInput';
 import { fireMetaEvent } from './MetaPixel';
 import {
@@ -11,6 +11,11 @@ import {
 import { SeatingPicker, type PublicZone } from './SeatingPicker';
 import { PhaseCountdown } from './PhaseCountdown';
 import type { FieldDef } from '@/lib/events';
+
+const META_EVENT_RESERVATION_CLICK = 'EventReservationClick';
+const META_EVENT_GUEST_COUNT_SELECTED = 'EventGuestCountSelected';
+const META_EVENT_RESERVATION_SUBMITTED = 'EventReservationSubmitted';
+const META_EVENT_RESERVATION_CONFIRMED = 'EventReservationConfirmed';
 
 /**
  * Public-facing reservation form rendered on /event/[slug]. Unauthenticated
@@ -451,19 +456,44 @@ export function PublicBookingForm({
   const [male, setMale] = useState<number>(0);
   const [female, setFemale] = useState<number>(0);
   const [couples, setCouples] = useState<number>(0);
+  const guestCountFingerprintRef = useRef<string>('');
   // Legacy single-pax state — used only when hasCoverRates is false.
   const [legacyPax, setLegacyPax] = useState<number>(2);
   const pax = hasCoverRates ? male + female + couples * 2 : legacyPax;
+  function trackGuestCountSelected(nextMale: number, nextFemale: number, nextCouples: number) {
+    const nextPax = nextMale + nextFemale + nextCouples * 2;
+    const fingerprint = `${nextMale}:${nextFemale}:${nextCouples}:${nextPax}`;
+    if (guestCountFingerprintRef.current === fingerprint) return;
+    guestCountFingerprintRef.current = fingerprint;
+    fireMetaEvent(META_EVENT_GUEST_COUNT_SELECTED, {
+      content_name: eventName,
+      guest_count: nextPax,
+      male_count: nextMale,
+      female_count: nextFemale,
+      couple_count: nextCouples,
+    });
+  }
+
+  function updateGuestMix(nextMale: number, nextFemale: number, nextCouples: number) {
+    const safeMale = Math.max(0, Math.floor(nextMale));
+    const safeFemale = Math.max(0, Math.floor(nextFemale));
+    const safeCouples = Math.max(0, Math.floor(nextCouples));
+    setMale(safeMale);
+    setFemale(safeFemale);
+    setCouples(safeCouples);
+    trackGuestCountSelected(safeMale, safeFemale, safeCouples);
+  }
+
   const setPax = (n: number) => {
     if (hasCoverRates) {
       // Distribute into "male" by default — keeps the simple pax-only API
       // working for code paths (zone pre-fill, etc.) that still mutate pax
       // directly. Customer can rebalance via the steppers afterwards.
-      setMale(Math.max(0, Math.floor(n)));
-      setFemale(0);
-      setCouples(0);
+      updateGuestMix(Math.max(0, Math.floor(n)), 0, 0);
     } else {
-      setLegacyPax(Math.max(1, Math.floor(n)));
+      const safePax = Math.max(1, Math.floor(n));
+      setLegacyPax(safePax);
+      trackGuestCountSelected(safePax, 0, 0);
     }
   };
   const [notes, setNotes] = useState('');
@@ -630,6 +660,7 @@ export function PublicBookingForm({
     setRsvpAnswers({});
     setRsvpErrors({});
     setSelectedZoneId(null);
+    guestCountFingerprintRef.current = '';
   }
 
   /**
@@ -846,7 +877,13 @@ export function PublicBookingForm({
       content_name: eventName,
       currency: 'INR',
       value: 0,
-    });
+    }, json.reservationId || undefined);
+    fireMetaEvent(META_EVENT_RESERVATION_SUBMITTED, {
+      content_name: eventName,
+      currency: 'INR',
+      value: 0,
+      guest_count: pax,
+    }, json.reservationId || undefined);
 
     return json.reservationId || null;
   }
@@ -857,6 +894,14 @@ export function PublicBookingForm({
     if (!reservationId && status.kind !== 'error') {
       // Older backends may not return a reservationId; treat as success
       // anyway as long as the API returned ok.
+    }
+    if (reservationId) {
+      fireMetaEvent(META_EVENT_RESERVATION_CONFIRMED, {
+        content_name: eventName,
+        currency: 'INR',
+        value: 0,
+        guest_count: pax,
+      }, reservationId);
     }
     setStatus({
       kind: 'reserved-no-payment',
@@ -941,7 +986,7 @@ export function PublicBookingForm({
       value: displayAmountRupees,
       currency: 'INR',
       content_name: eventName,
-    });
+    }, reservationId);
     // Fire payment_initiated — this is the funnel stage between
     // checkout_started (CTA click) and checkout_success. It signals that
     // the Razorpay order was created on the server AND the modal is about
@@ -1012,7 +1057,13 @@ export function PublicBookingForm({
         value: amountRupees,
         currency: 'INR',
         content_name: eventName,
-      });
+      }, resp.razorpay_order_id);
+      fireMetaEvent(META_EVENT_RESERVATION_CONFIRMED, {
+        value: amountRupees,
+        currency: 'INR',
+        content_name: eventName,
+        payment_id: resp.razorpay_payment_id,
+      }, resp.razorpay_order_id);
       setStatus({
         kind: 'success',
         message: 'Booking confirmed! Cover pass sent to your WhatsApp.',
@@ -1036,6 +1087,11 @@ export function PublicBookingForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setStatus({ kind: 'idle' });
+    fireMetaEvent(META_EVENT_RESERVATION_CLICK, {
+      content_name: eventName,
+      payment_mode: paymentMode,
+      guest_count: pax,
+    });
 
     // Per-event analytics — fire-and-forget. CTA was clicked (this is the
     // "Reserve & Pay" / "Reserve my spot" submit button). Mirrors the Pixel
@@ -1523,8 +1579,8 @@ export function PublicBookingForm({
             count={male}
             unitPrice={Number(coverRates.male_stag) || 0}
             disabled={busy}
-            onDecrement={() => setMale(Math.max(0, male - 1))}
-            onIncrement={() => setMale(male + 1)}
+            onDecrement={() => updateGuestMix(male - 1, female, couples)}
+            onIncrement={() => updateGuestMix(male + 1, female, couples)}
           />
           <GuestRow
             label="Female"
@@ -1532,8 +1588,8 @@ export function PublicBookingForm({
             count={female}
             unitPrice={Number(coverRates.female_stag) || 0}
             disabled={busy}
-            onDecrement={() => setFemale(Math.max(0, female - 1))}
-            onIncrement={() => setFemale(female + 1)}
+            onDecrement={() => updateGuestMix(male, female - 1, couples)}
+            onIncrement={() => updateGuestMix(male, female + 1, couples)}
           />
           <GuestRow
             label="Couple"
@@ -1541,8 +1597,8 @@ export function PublicBookingForm({
             count={couples}
             unitPrice={Number(coverRates.couple) || 0}
             disabled={busy}
-            onDecrement={() => setCouples(Math.max(0, couples - 1))}
-            onIncrement={() => setCouples(couples + 1)}
+            onDecrement={() => updateGuestMix(male, female, couples - 1)}
+            onIncrement={() => updateGuestMix(male, female, couples + 1)}
           />
 
           {pax < 1 && (

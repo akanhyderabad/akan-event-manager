@@ -9,7 +9,14 @@
  * internally; we just normalize the request envelope here.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { getDb } from '@/lib/db';
 import { trackEvent, isAnalyticsKind } from '@/lib/event-analytics';
+import {
+  getCapiAccessToken,
+  getEffectivePixelId,
+  getTestEventCode,
+  sendCapiEvent,
+} from '@/lib/meta-pixel';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -51,5 +58,65 @@ export async function POST(req: NextRequest) {
     ua: ua || undefined,
   });
 
+  // Mirror the key public booking funnel steps into Meta CAPI so they still
+  // appear even when browser-side Pixel visibility is inconsistent.
+  if (kindRaw === 'book_click' || kindRaw === 'ticket_selected') {
+    try {
+      const db = getDb();
+      const event = db.prepare(`
+        SELECT id, slug, name, meta_pixel_id
+        FROM events
+        WHERE id = ?
+        LIMIT 1
+      `).get(eventId) as
+        | { id: string; slug?: string | null; name?: string | null; meta_pixel_id?: string | null }
+        | undefined;
+
+      if (event) {
+        const pixelId = getEffectivePixelId(event.meta_pixel_id);
+        const accessToken = getCapiAccessToken();
+        const testEventCode = getTestEventCode();
+        if (pixelId && accessToken) {
+          const eventName = kindRaw === 'book_click'
+            ? 'EventReservationClick'
+            : 'EventGuestCountSelected';
+          const pax = Number.isFinite(Number(metadata?.guests ?? metadata?.pax))
+            ? Math.max(0, Math.floor(Number(metadata?.guests ?? metadata?.pax)))
+            : undefined;
+          const sourceUrl = event.slug
+            ? `${resolveOrigin(req)}/event/${encodeURIComponent(event.slug)}`
+            : undefined;
+
+          await sendCapiEvent({
+            pixelId,
+            accessToken,
+            eventName,
+            eventId: `${eventId}:${sessionId}:${kindRaw}`,
+            userData: {
+              client_ip_address: ip || undefined,
+              client_user_agent: ua || undefined,
+            },
+            customData: {
+              content_name: event.name || 'Akan Event',
+              content_type: 'event',
+              event_id: event.id,
+              pax,
+            },
+            sourceUrl,
+            testEventCode: testEventCode || undefined,
+          });
+        }
+      }
+    } catch {
+      // Analytics is best-effort — never block the funnel on a Meta send.
+    }
+  }
+
   return NO_CONTENT;
+}
+
+function resolveOrigin(req: NextRequest): string {
+  const origin = req.headers.get('origin')?.trim();
+  if (origin) return origin.replace(/\/$/, '');
+  return 'https://events.akanhyd.com';
 }

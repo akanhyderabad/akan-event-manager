@@ -12,15 +12,15 @@ export const dynamic = 'force-dynamic';
 /**
  * Generate the A6 cover-pass PDF for a wallet.
  *
- * The wallet's plaintext PIN (now displayed as "QR Code ID") is only
+ * The wallet's plaintext PIN is only
  * available at issue time — the DB stores only the bcrypt hash. So the
- * caller must pass `qrCodeId` in the body.
+ * caller must pass it in the body.
  *
  * Access:
  *   • host / manager / entry — they're the ones who hand passes to guests
  *
  * Body:
- *   { qrCodeId: string }       — required, the 4-digit code shown to the guest
+ *   { qrCodeId: string }       — required, the guest PIN shown at issue time
  *
  * Returns: application/pdf binary stream
  */
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ txnId: str
   const qrCodeId = String(body?.qrCodeId || '').trim();
 
   if (!/^\d{4,8}$/.test(qrCodeId)) {
-    return NextResponse.json({ ok: false, message: 'qrCodeId must be 4-8 digits.' }, { status: 400 });
+    return NextResponse.json({ ok: false, message: 'PIN must be 4-8 digits.' }, { status: 400 });
   }
 
   const wallet = lookupWallet(txnId);

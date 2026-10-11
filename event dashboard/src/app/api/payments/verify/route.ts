@@ -12,6 +12,14 @@ import { trackEvent } from '@/lib/event-analytics';
 import { markRecovered as markCartRecovered } from '@/lib/cart-recovery';
 import { sendBookingAlertWhatsApp, sendSaleWebhook } from '@/lib/notifications';
 import { tryTransitionAfterCapture, type PhaseScope } from '@/lib/ticket-phases';
+import {
+  getCapiAccessToken,
+  getEffectivePixelId,
+  getTestEventCode,
+  hashSha256Lowercase,
+  normalizePhoneForCapi,
+  sendCapiEvent,
+} from '@/lib/meta-pixel';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -415,6 +423,61 @@ export async function POST(req: NextRequest) {
     });
     markCartRecovered(payment.id, payment.reservation_id || null);
   } catch { /* analytics best-effort */ }
+
+  // ── Meta CAPI Purchase + custom reservation-confirmed (fire-and-forget) ──
+  // Mirrors the browser-side Purchase event and adds a custom event name so
+  // this reservation flow is easy to isolate in Events Manager when the same
+  // Pixel ID is reused elsewhere.
+  try {
+    const pixelId = getEffectivePixelId(event.meta_pixel_id);
+    const accessToken = getCapiAccessToken();
+    const testEventCode = getTestEventCode();
+    const fbp = req.cookies.get('_fbp')?.value;
+    const fbc = req.cookies.get('_fbc')?.value;
+    if (pixelId && accessToken && payment.amount > 0 && payment.payer_phone) {
+      const fwd = req.headers.get('x-forwarded-for') || '';
+      const clientIp = fwd.split(',')[0]?.trim() || req.headers.get('x-real-ip') || undefined;
+      const userAgent = req.headers.get('user-agent') || undefined;
+      const userData = {
+        ph: [hashSha256Lowercase(normalizePhoneForCapi(payment.payer_phone))],
+        em: payment.payer_email ? [hashSha256Lowercase(payment.payer_email)] : undefined,
+        fbp: fbp || undefined,
+        fbc: fbc || undefined,
+        client_ip_address: clientIp,
+        client_user_agent: userAgent,
+      };
+      const customData = {
+        value: payment.amount,
+        currency: payment.currency || 'INR',
+        content_name: event.name,
+        reservation_id: payment.reservation_id,
+      };
+      await Promise.allSettled([
+        sendCapiEvent({
+          pixelId,
+          accessToken,
+          eventName: 'Purchase',
+          eventId: orderId,
+          actionSource: 'website',
+          userData,
+          customData,
+          testEventCode: testEventCode || undefined,
+        }),
+        sendCapiEvent({
+          pixelId,
+          accessToken,
+          eventName: 'EventReservationConfirmed',
+          eventId: orderId,
+          actionSource: 'website',
+          userData,
+          customData,
+          testEventCode: testEventCode || undefined,
+        }),
+      ]);
+    }
+  } catch {
+    /* never block on Meta */
+  }
 
   // ── Settings V2: host booking-alert + sale webhook (fire-and-forget) ──
   // Both helpers are guarded by config inside the helper, so an unset URL

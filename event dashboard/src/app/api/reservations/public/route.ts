@@ -12,6 +12,7 @@ import { getZone } from '@/lib/seating-layout';
 import {
   getEffectivePixelId,
   getCapiAccessToken,
+  getTestEventCode,
   hashSha256Lowercase,
   normalizePhoneForCapi,
   sendCapiEvent,
@@ -21,6 +22,8 @@ import { signReservationQrToken } from '@/lib/signed-url';
 import { projectPublicEventLifecycle } from '@/lib/public-event-lifecycle';
 import { resolveRequestOrigin } from '@/lib/request-origin';
 import { markAbandonedLeadConverted } from '@/lib/abandoned-bookings';
+import { getReservationSummary } from '@/lib/reservation-ledger';
+import { generateReservationPassPdf } from '@/lib/pdf/reservation-pass';
 
 // ─── Constant-time invite secret compare ───────────────────────────────────
 // Length-mismatch short-circuit is fine — leaking the length of a
@@ -462,33 +465,66 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  // ── Fire CAPI Lead (fire-and-forget) ──
+  // ── Fire CAPI reservation events ──
   const pixelId = getEffectivePixelId(event.meta_pixel_id);
   const accessToken = getCapiAccessToken();
+  const testEventCode = getTestEventCode();
   if (pixelId && accessToken) {
     const phoneHash = hashSha256Lowercase(normalizePhoneForCapi(phone));
-    // Don't await — Meta's API can be slow and the customer is waiting on
-    // their confirmation. Errors are swallowed; we'd see them in CAPI's
-    // Test Events tab during diagnostic runs.
-    sendCapiEvent({
-      pixelId,
-      accessToken,
-      eventName: 'Lead',
-      eventId: reservationId,
-      actionSource: 'website',
-      userData: {
-        ph: [phoneHash],
-        fbp: fbp || undefined,
-        fbc: fbc || undefined,
-        client_ip_address: ip !== 'unknown' ? ip : undefined,
-        client_user_agent: req.headers.get('user-agent') || undefined,
-      },
-      customData: {
-        content_name: event.name,
-        currency: 'INR',
-        value: 0,
-      },
-    }).catch(() => { /* never block on Meta */ });
+    const userData = {
+      ph: [phoneHash],
+      fbp: fbp || undefined,
+      fbc: fbc || undefined,
+      client_ip_address: ip !== 'unknown' ? ip : undefined,
+      client_user_agent: req.headers.get('user-agent') || undefined,
+    };
+    await Promise.allSettled([
+      sendCapiEvent({
+        pixelId,
+        accessToken,
+        eventName: 'Lead',
+        eventId: reservationId,
+        actionSource: 'website',
+        userData,
+        customData: {
+          content_name: event.name,
+          currency: 'INR',
+          value: 0,
+        },
+        testEventCode: testEventCode || undefined,
+      }),
+      sendCapiEvent({
+        pixelId,
+        accessToken,
+        eventName: 'EventReservationSubmitted',
+        eventId: reservationId,
+        actionSource: 'website',
+        userData,
+        customData: {
+          content_name: event.name,
+          currency: 'INR',
+          value: 0,
+          guest_count: pax,
+        },
+        testEventCode: testEventCode || undefined,
+      }),
+      sendCapiEvent({
+        pixelId,
+        accessToken,
+        eventName: 'EventReservationConfirmed',
+        eventId: reservationId,
+        actionSource: 'website',
+        userData,
+        customData: {
+          content_name: event.name,
+          currency: 'INR',
+          value: 0,
+          guest_count: pax,
+          flow_type: 'free_reservation',
+        },
+        testEventCode: testEventCode || undefined,
+      }),
+    ]);
   }
 
   // ── Fire host WhatsApp booking alert (fire-and-forget) ──
@@ -506,7 +542,25 @@ export async function POST(req: NextRequest) {
   }).catch(() => { /* never block on host alert */ });
 
   const qrToken = signReservationQrToken({ reservationId });
-  const qrUrl = `${resolveRequestOrigin(req)}/api/reservations/qr-png/${encodeURIComponent(qrToken)}`;
+  const origin = resolveRequestOrigin(req);
+  const qrUrl = `${origin}/api/reservations/qr-png/${encodeURIComponent(qrToken)}`;
+  const reservationSummary = getReservationSummary(reservationId);
+  const reservationPin = reservationSummary?.display_code || reservationId.slice(-4).toUpperCase();
+  const eventStartTime = typeof (event as EventRow & { start_time?: string | null }).start_time === 'string'
+    ? (event as EventRow & { start_time?: string | null }).start_time
+    : null;
+  const reservationPassPdf = await generateReservationPassPdf({
+    bookingId: reservationId,
+    pin: reservationPin,
+    guestName: name,
+    eventName: event.name,
+    eventDate: event.event_date,
+    eventTime: eventStartTime,
+    guestCount: pax,
+    tableSummary: tableTypeLabel || (selectedTableLabels.length > 0 ? selectedTableLabels.join(', ') : null),
+    amountDueAtVenue: entryAmount + coverAmount,
+    qrValue: `${origin}/admin/scan?token=${encodeURIComponent(qrToken)}`,
+  });
 
   if (abandonedLeadId) {
     try {
@@ -516,9 +570,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const eventStartTime = typeof (event as EventRow & { start_time?: string | null }).start_time === 'string'
-    ? (event as EventRow & { start_time?: string | null }).start_time
-    : null;
   const bookingTime = eventStartTime
     ? `${event.event_date}T${eventStartTime.length === 5 ? `${eventStartTime}:00` : eventStartTime}+05:30`
     : `${event.event_date}T00:00:00+05:30`;
@@ -549,6 +600,7 @@ export async function POST(req: NextRequest) {
 
   void sendReservationEmails({
     bookingId: reservationId,
+    reservationPin,
     guestName: name,
     guestPhone: phone,
     guestEmail: email,
@@ -561,6 +613,10 @@ export async function POST(req: NextRequest) {
     coverAmount,
     amountDueAtVenue: entryAmount + coverAmount,
     qrUrl,
+    pdfAttachment: {
+      filename: `reservation-${reservationId}.pdf`,
+      content: Buffer.from(reservationPassPdf),
+    },
   }).catch(() => { /* never block on booking emails */ });
 
   return NextResponse.json({

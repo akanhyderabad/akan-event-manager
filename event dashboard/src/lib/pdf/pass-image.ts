@@ -148,7 +148,7 @@ export async function generatePassImage(input: PassImageInput): Promise<Buffer> 
   <text x="${W / 2}" y="${qrY + qrSize + 100}" text-anchor="middle"
         font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif"
         font-size="12" font-weight="500" fill="${MUTED}" letter-spacing="4">
-    QR CODE ID
+    PIN
   </text>` : ''}
 
   <!-- Guest info grid -->

@@ -25,6 +25,15 @@ export interface MetaPixelEvent {
   data?: Record<string, unknown>;
 }
 
+const STANDARD_META_EVENTS = new Set([
+  'PageView',
+  'ViewContent',
+  'InitiateCheckout',
+  'Lead',
+  'Purchase',
+  'Contact',
+]);
+
 interface MetaPixelProps {
   pixelId: string;
   testEventCode?: string;
@@ -93,15 +102,27 @@ ${trackCalls}
  * No-ops cleanly on the server or when the pixel snippet was never injected
  * (e.g. event has no configured Pixel ID).
  */
-export function fireMetaEvent(name: string, data?: Record<string, unknown>) {
+export function fireMetaEvent(
+  name: string,
+  data?: Record<string, unknown>,
+  eventId?: string,
+) {
   if (typeof window === 'undefined') return;
   const w = window as unknown as {
     fbq?: (...args: unknown[]) => void;
   };
   if (typeof w.fbq !== 'function') return;
-  if (data) {
-    w.fbq('track', name, data);
+
+  const method = STANDARD_META_EVENTS.has(name) ? 'track' : 'trackCustom';
+  const options = eventId ? { eventID: eventId } : undefined;
+
+  if (data && options) {
+    w.fbq(method, name, data, options);
+  } else if (data) {
+    w.fbq(method, name, data);
+  } else if (options) {
+    w.fbq(method, name, undefined, options);
   } else {
-    w.fbq('track', name);
+    w.fbq(method, name);
   }
 }

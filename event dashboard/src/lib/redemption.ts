@@ -86,7 +86,7 @@ export async function redeemWallet(input: RedeemInput): Promise<RedeemResult> {
     }
     return {
       ok: false,
-      message: `Incorrect QR Code ID. ${PIN_MAX_ATTEMPTS - fails} attempt(s) left.`,
+      message: `Incorrect PIN. ${PIN_MAX_ATTEMPTS - fails} attempt(s) left.`,
       attemptsLeft: PIN_MAX_ATTEMPTS - fails,
     };
   }

@@ -47,6 +47,7 @@ export function ReservationQrScanner({ onDetected, onClose, title }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(true);
   const [lastMiss, setLastMiss] = useState<string | null>(null);
+  const detectedRef = useRef(false);
 
   // Stable callback ref — keeps onDetected fresh without re-triggering the
   // start effect on every parent re-render (which would tear down the camera).
@@ -86,6 +87,7 @@ export function ReservationQrScanner({ onDetected, onClose, title }: Props) {
         if (cancelled) return;
 
         const Html5Qrcode = mod.Html5Qrcode;
+        const supported = mod.Html5QrcodeSupportedFormats;
         const scanner = new Html5Qrcode(containerId, { verbose: false });
         scannerRef.current = scanner;
 
@@ -98,20 +100,25 @@ export function ReservationQrScanner({ onDetected, onClose, title }: Props) {
         const back = cameras.find((c: { label: string }) => /back|rear|environment/i.test(c.label));
         const cameraId = (back || cameras[0]).id;
 
+        const scanConfig = {
+          fps: 14,
+          qrbox: { width: 280, height: 280 },
+          aspectRatio: 1,
+          disableFlip: true,
+          ...(supported ? { formatsToSupport: [supported.QR_CODE] } : {}),
+        };
+
         await scanner.start(
           cameraId,
-          {
-            fps: 10,
-            qrbox: { width: 260, height: 260 },
-            aspectRatio: 1,
-          },
+          scanConfig as Parameters<typeof scanner.start>[1],
           (decoded: string) => {
-            if (!startedRef.current) return;
+            if (!startedRef.current || detectedRef.current) return;
             const token = extractToken(decoded);
             if (!token) {
               setLastMiss(truncate(decoded, 60));
               return;
             }
+            detectedRef.current = true;
             setLastMiss(null);
             safeStop().then(() => onDetectedRef.current(token, decoded));
           },
@@ -182,6 +189,18 @@ export function ReservationQrScanner({ onDetected, onClose, title }: Props) {
             </div>
           )}
         </div>
+
+        <style jsx global>{`
+          #${containerId},
+          #${containerId} > div,
+          #${containerId} video,
+          #${containerId} canvas {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+            border-radius: 0 !important;
+          }
+        `}</style>
 
         <div className="px-4 py-3 border-t border-slate-200">
           {error ? (

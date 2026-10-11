@@ -2,6 +2,7 @@ import { getDb } from './db';
 import { nanoid } from 'nanoid';
 import { logAudit } from './audit';
 import { normalizePhone } from './users';
+import { isValidNonNegativeMoney, MAX_WALLET_AMOUNT_INR, parseMoneyInput } from './money';
 
 export type TicketCategory = 'guest_list' | 'walk_in';
 export type TicketStatus = 'issued' | 'cancelled';
@@ -168,8 +169,17 @@ export function createTicket(input: CreateTicketInput): Ticket {
   // (legacy single-price callers). When BOTH are 0 but price > 0, the
   // wallet auto-issue downstream treats the whole price as cover (matches
   // the prior semantics so back-compat holds).
-  const entryAmt = Math.max(0, Number(input.entryAmount ?? 0));
-  const coverAmt = Math.max(0, Number(input.coverAmount ?? 0));
+  const entryAmt = parseMoneyInput(input.entryAmount ?? 0);
+  const coverAmt = parseMoneyInput(input.coverAmount ?? 0);
+  if (!isValidNonNegativeMoney(entryAmt)) {
+    throw new Error('entryAmount must be non-negative with up to 2 decimal places.');
+  }
+  if (!isValidNonNegativeMoney(coverAmt)) {
+    throw new Error('coverAmount must be non-negative with up to 2 decimal places.');
+  }
+  if (coverAmt > MAX_WALLET_AMOUNT_INR) {
+    throw new Error(`coverAmount cannot exceed Rs ${MAX_WALLET_AMOUNT_INR.toLocaleString('en-IN')}.`);
+  }
 
   db.prepare(`
     INSERT INTO tickets (

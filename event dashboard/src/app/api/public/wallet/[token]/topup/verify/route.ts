@@ -4,6 +4,7 @@ import { lookupWallet } from '@/lib/wallet';
 import { getDb } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
 import { verifyCheckoutSignature } from '@/lib/razorpay';
+import { MAX_WALLET_AMOUNT_INR } from '@/lib/money';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -164,6 +165,27 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ token: str
   const wallet = lookupWallet(payload.txnId);
   if (!wallet) {
     return NextResponse.json({ ok: false, message: 'Wallet not found.' }, { status: 404 });
+  }
+  if ((wallet.balance + payment.amount) > MAX_WALLET_AMOUNT_INR) {
+    logAudit({
+      actor: 'public',
+      action: 'wallet_topup_limit_blocked',
+      entityType: 'payment',
+      entityId: payment.id,
+      details: {
+        txn_id: payload.txnId,
+        balance_before: wallet.balance,
+        topup_amount: payment.amount,
+        limit: MAX_WALLET_AMOUNT_INR,
+      },
+    });
+    return NextResponse.json(
+      {
+        ok: false,
+        message: `Wallet balance cannot exceed Rs ${MAX_WALLET_AMOUNT_INR.toLocaleString('en-IN')}.`,
+      },
+      { status: 409 },
+    );
   }
 
   const balanceBefore = wallet.balance;

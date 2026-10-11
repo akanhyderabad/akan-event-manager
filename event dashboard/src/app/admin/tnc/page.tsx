@@ -4,11 +4,11 @@ import { useEffect, useState } from 'react';
 
 const DEFAULT_TNC = `Entry fee is converted into a cover wallet redeemable at this venue only.
 
-The QR code and QR Code ID issued at entry are required together to redeem. Guests must keep the QR Code ID private — do not share with anyone except the captain at your table.
+The QR code and PIN issued at entry are required together to redeem. Guests must keep the PIN private and share it only with the captain at their table when redeeming.
 
 Cover wallets expire at 2:00 AM IST on the day following the event date. Unredeemed balance after expiry is non-refundable and non-transferable.
 
-Captains may refuse redemption if the wallet has expired, been flagged for suspicious activity, or cannot produce the correct QR Code ID after 3 attempts (QR Code ID is locked for 5 minutes).
+Captains may refuse redemption if the wallet has expired, been flagged for suspicious activity, or the correct PIN is not produced after 3 attempts (the PIN is locked for 5 minutes).
 
 The venue reserves the right to revoke any wallet found to be shared, screenshotted in public, or used fraudulently. Management's decision on disputes is final.
 

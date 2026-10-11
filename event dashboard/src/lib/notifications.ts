@@ -144,6 +144,7 @@ export interface ReservationForwardWebhookPayload {
 
 export interface ReservationEmailPayload {
   bookingId: string;
+  reservationPin?: string | null;
   guestName: string;
   guestPhone: string;
   guestEmail: string | null;
@@ -156,6 +157,10 @@ export interface ReservationEmailPayload {
   coverAmount: number;
   amountDueAtVenue: number;
   qrUrl: string | null;
+  pdfAttachment?: {
+    filename: string;
+    content: Buffer;
+  } | null;
 }
 
 /**
@@ -271,7 +276,7 @@ const RESERVEGO_TIMEOUT_MS = 8000;
 export interface ReservegoReservationInput {
   bookingId: string;   // our reservation id — for audit correlation only
   guestName: string;
-  guestPhone: string;  // any format; normalized to a 10-digit local number below
+  guestPhone: string;  // normalized to 91 + the 10-digit Indian number below
   guestCount: number;
   bookingTime: string; // ISO 8601 (e.g. 2026-05-02T21:30:00+05:30)
   eventName: string;
@@ -287,11 +292,12 @@ export async function sendReservegoReservation(
   const source = (process.env.RESERVEGO_SOURCE || getConfig('RESERVEGO_SOURCE', '9')).trim();
   if (!url || !apiKey || !restaurantId) return false;
 
-  // ReserveGo (Indian venues) expects a local 10-digit number; strip +91 / spaces.
+  // Send the Indian country code as digits; ReserveGo adds the display '+' itself.
   const digits = (input.guestPhone || '').replace(/\D/g, '');
-  const guestPhone = digits.length === 12 && digits.startsWith('91')
+  const localPhone = digits.length === 12 && digits.startsWith('91')
     ? digits.slice(2)
     : (digits.length > 10 ? digits.slice(-10) : digits);
+  const guestPhone = `91${localPhone}`;
 
   const form = new URLSearchParams({
     guestName: input.guestName,
@@ -371,6 +377,7 @@ export async function sendReservationEmails(
   const when = [payload.eventDate, payload.eventTime].filter(Boolean).join(' · ');
   const chargesText = `Entry ${formatINR(payload.entryAmount)} | Cover ${formatINR(payload.coverAmount)} | Pay at venue ${formatINR(payload.amountDueAtVenue)}`;
   const tableText = payload.tableSummary || 'Not specified';
+  const pinText = payload.reservationPin?.trim() || 'Not assigned';
 
   const jobs: Array<Promise<unknown>> = [];
 
@@ -387,6 +394,7 @@ export async function sendReservationEmails(
           `Phone: ${payload.guestPhone}\n` +
           `Email: ${payload.guestEmail || 'Not provided'}\n` +
           `Guests: ${payload.guestCount}\n` +
+          `PIN: ${pinText}\n` +
           `Event: ${payload.eventName}\n` +
           `When: ${when}\n` +
           `Tables: ${tableText}\n` +
@@ -404,6 +412,7 @@ export async function sendReservationEmails(
           `<tr><td style="padding:6px 0;color:#8c7762;">Phone</td><td style="padding:6px 0;font-weight:600;text-align:right;">${payload.guestPhone}</td></tr>` +
           `<tr><td style="padding:6px 0;color:#8c7762;">Email</td><td style="padding:6px 0;font-weight:600;text-align:right;">${payload.guestEmail || 'Not provided'}</td></tr>` +
           `<tr><td style="padding:6px 0;color:#8c7762;">Guests</td><td style="padding:6px 0;font-weight:600;text-align:right;">${payload.guestCount}</td></tr>` +
+          `<tr><td style="padding:6px 0;color:#8c7762;">PIN</td><td style="padding:6px 0;font-weight:600;text-align:right;">${pinText}</td></tr>` +
           `<tr><td style="padding:6px 0;color:#8c7762;">Tables</td><td style="padding:6px 0;font-weight:600;text-align:right;">${tableText}</td></tr>` +
           `<tr><td style="padding:6px 0;color:#8c7762;">Entry</td><td style="padding:6px 0;font-weight:600;text-align:right;">${formatINR(payload.entryAmount)}</td></tr>` +
           `<tr><td style="padding:6px 0;color:#8c7762;">Cover</td><td style="padding:6px 0;font-weight:600;text-align:right;">${formatINR(payload.coverAmount)}</td></tr>` +
@@ -411,6 +420,7 @@ export async function sendReservationEmails(
           `</table>` +
           (payload.qrUrl ? `<p style="margin:18px 0 0;font-size:12px;color:#5a4a3f;">QR: <a href="${payload.qrUrl}">${payload.qrUrl}</a></p>` : '') +
           `</div></div>`,
+        attachments: payload.pdfAttachment ? [payload.pdfAttachment] : [],
       }),
     );
   }
@@ -425,6 +435,7 @@ export async function sendReservationEmails(
           `Hi ${payload.guestName},\n\n` +
           `Your booking has been confirmed.\n\n` +
           `Booking ID: ${payload.bookingId}\n` +
+          `PIN: ${pinText}\n` +
           `Event: ${payload.eventName}\n` +
           `When: ${when}\n` +
           `Guests: ${payload.guestCount}\n` +
@@ -443,6 +454,7 @@ export async function sendReservationEmails(
           `<table style="width:100%;border-collapse:collapse;font-size:14px;color:#1c130d;">` +
           `<tr><td style="padding:6px 0;color:#8c7762;">Booking ID</td><td style="padding:6px 0;font-weight:700;text-align:right;">${payload.bookingId}</td></tr>` +
           `<tr><td style="padding:6px 0;color:#8c7762;">When</td><td style="padding:6px 0;font-weight:600;text-align:right;">${when}</td></tr>` +
+          `<tr><td style="padding:6px 0;color:#8c7762;">PIN</td><td style="padding:6px 0;font-weight:600;text-align:right;">${pinText}</td></tr>` +
           `<tr><td style="padding:6px 0;color:#8c7762;">Guests</td><td style="padding:6px 0;font-weight:600;text-align:right;">${payload.guestCount}</td></tr>` +
           `<tr><td style="padding:6px 0;color:#8c7762;">Tables</td><td style="padding:6px 0;font-weight:600;text-align:right;">${tableText}</td></tr>` +
           `<tr><td style="padding:6px 0;color:#8c7762;">Entry</td><td style="padding:6px 0;font-weight:600;text-align:right;">${formatINR(payload.entryAmount)}</td></tr>` +
@@ -452,6 +464,7 @@ export async function sendReservationEmails(
           `<p style="margin:18px 0 0;color:#5a4a3f;font-size:13px;line-height:1.6;">Please show this booking ID${payload.qrUrl ? ' or the QR below' : ''} at the venue entry desk.</p>` +
           (payload.qrUrl ? `<p style="margin:10px 0 0;font-size:12px;"><a href="${payload.qrUrl}">Open booking QR</a></p>` : '') +
           `</div></div>`,
+        attachments: payload.pdfAttachment ? [payload.pdfAttachment] : [],
       }),
     );
   }

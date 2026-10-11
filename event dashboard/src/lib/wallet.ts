@@ -7,6 +7,11 @@ import { attachWalletToTable } from './tables';
 import { getEvent } from './events';
 import { markReservationConverted } from './reservations';
 import type { WalletWithGuest, PaymentMethod } from './types';
+import {
+  isValidNonNegativeMoney,
+  MAX_WALLET_AMOUNT_INR,
+  parseMoneyInput,
+} from './money';
 
 export interface IssueWalletInput {
   name: string;
@@ -34,6 +39,21 @@ export async function issueWallet(input: IssueWalletInput): Promise<IssueWalletR
   const db = getDb();
   const venueName = getConfig('VENUE_NAME', 'Venue');
   const pinLength = Number(getConfig('PIN_LENGTH', '6')) || 6;
+  const entryFee = parseMoneyInput(input.entryFee);
+  const coverIssuedRaw = input.coverIssued != null ? parseMoneyInput(input.coverIssued) : entryFee;
+
+  if (!isValidNonNegativeMoney(entryFee)) {
+    throw new Error('Entry fee must be a non-negative amount with up to 2 decimal places.');
+  }
+  if (!isValidNonNegativeMoney(coverIssuedRaw)) {
+    throw new Error('Cover amount must be a non-negative amount with up to 2 decimal places.');
+  }
+  if (coverIssuedRaw > MAX_WALLET_AMOUNT_INR) {
+    throw new Error(`Wallet amount cannot exceed Rs ${MAX_WALLET_AMOUNT_INR.toLocaleString('en-IN')}.`);
+  }
+  if (entryFee > MAX_WALLET_AMOUNT_INR) {
+    throw new Error(`Entry fee cannot exceed Rs ${MAX_WALLET_AMOUNT_INR.toLocaleString('en-IN')}.`);
+  }
 
   // Prefer event-specific date + cutoff; fall back to global config for backward compat.
   let eventDate = getConfig('EVENT_DATE');
@@ -48,7 +68,7 @@ export async function issueWallet(input: IssueWalletInput): Promise<IssueWalletR
     throw new Error('EVENT_DATE is not set in config.');
   }
   const expiresAt = computeExpiresAt(eventDate, cutoffHour);
-  const coverIssued = input.coverIssued != null ? input.coverIssued : input.entryFee;
+  const coverIssued = coverIssuedRaw;
 
   const guestId = nanoid();
   const txnId = generateTxnId(venueName);
@@ -69,7 +89,7 @@ export async function issueWallet(input: IssueWalletInput): Promise<IssueWalletR
         table_id, event_id, reservation_id
       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)
     `).run(
-      txnId, guestId, input.entryFee, coverIssued, coverIssued,
+      txnId, guestId, entryFee, coverIssued, coverIssued,
       input.paymentMethod, pinHash, input.issuedBy, now, expiresAt,
       input.tableId || null,
       input.eventId || null,
@@ -91,7 +111,7 @@ export async function issueWallet(input: IssueWalletInput): Promise<IssueWalletR
     entityType: 'wallet',
     entityId: txnId,
     details: {
-      entry: input.entryFee, cover: coverIssued, pax: input.pax || 1,
+      entry: entryFee, cover: coverIssued, pax: input.pax || 1,
       method: input.paymentMethod, guest: input.name,
       event_date: eventDate, expires_at: expiresAt,
       event_id: input.eventId || null, reservation_id: input.reservationId || null,

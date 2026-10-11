@@ -285,9 +285,9 @@ export default function OfflineTicketingPage() {
       //
       // Branch matrix:
       //   - cover + WhatsApp queued      → "Cover ₹X sent on WhatsApp"
-      //   - cover + WhatsApp off         → "Cover ₹X · QR Code ID NNNN"
+      //   - cover + WhatsApp off         → "Cover ₹X · PIN NNNN"
       //   - entry_only + WhatsApp queued → "Entry pass sent on WhatsApp"
-      //   - entry_only + WhatsApp off    → "Entry pass · QR Code ID NNNN"
+      //   - entry_only + WhatsApp off    → "Entry pass · PIN NNNN"
       //   - wallet missing               → "wallet pending — issue manually"
       const w = data.wallet as {
         pin?: string;
@@ -303,7 +303,7 @@ export default function OfflineTicketingPage() {
           : 'Entry pass';
         flash += w.whatsappQueued
           ? ` · ${label} sent on WhatsApp`
-          : ` · ${label} · QR Code ID ${w.pin.slice(-4)}`;
+          : ` · ${label} · PIN ${w.pin.slice(-4)}`;
       } else {
         flash += ` (wallet not auto-issued — visit Issue Cover)`;
       }
@@ -547,6 +547,7 @@ export default function OfflineTicketingPage() {
                       type="number"
                       min={0}
                       step="0.01"
+                      max={100000}
                       value={entryInputValue}
                       onChange={(e) => setEntryOverride(e.target.value)}
                       disabled={complimentary}
@@ -570,6 +571,7 @@ export default function OfflineTicketingPage() {
                       type="number"
                       min={0}
                       step="0.01"
+                      max={100000}
                       value={coverInputValue}
                       onChange={(e) => setCoverOverride(e.target.value)}
                       disabled={complimentary}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { redeemWallet } from '@/lib/redemption';
 import { getSession } from '@/lib/auth';
+import { hasAtMostTwoDecimals, parseMoneyInput } from '@/lib/money';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,10 +21,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ txnId: str
     const { pin, amount, orderRef, notes } = body || {};
 
     if (!pin || !/^\d{4,8}$/.test(String(pin))) {
-      return NextResponse.json({ ok: false, message: 'QR Code ID must be 4–8 digits.' }, { status: 400 });
+      return NextResponse.json({ ok: false, message: 'PIN must be 4–8 digits.' }, { status: 400 });
     }
-    const amt = Number(amount);
-    if (!(amt > 0)) {
+    const amt = parseMoneyInput(amount);
+    if (!(amt > 0) || !hasAtMostTwoDecimals(amt)) {
       return NextResponse.json({ ok: false, message: 'Amount must be greater than zero.' }, { status: 400 });
     }
 
