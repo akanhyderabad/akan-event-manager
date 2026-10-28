@@ -167,7 +167,7 @@ export default function AnalyticsLedger() {
 
   async function deleteRow(row: TxnRow) {
     if (row.kind === 'Issue') {
-      if (!confirm(`Void wallet ${row.invoice_no}? This refunds the customer and cannot be undone.`)) return;
+      if (!confirm(`Void wallet ${row.invoice_no}? This removes the remaining cover balance without returning money. Use Issue Cover → Refunds to record a refund.`)) return;
       setBusyId(row.id);
       try {
         const r = await fetch(`/api/wallets/${encodeURIComponent(row.entity_ref)}`, {

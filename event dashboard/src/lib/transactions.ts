@@ -1,11 +1,12 @@
 /**
  * Transaction register — the source of truth for the History page.
  *
- * Unions two streams into one ledger so an operator can see every entry &
+ * Combines three streams into one ledger so an operator can see every entry &
  * cover-charge movement in date order:
  *
  *   1. Wallet issuances  — money IN at the door  (Transaction = "Entry & Cover")
  *   2. Redemptions       — cover spent at bar    (Transaction = "Cover Redemption")
+ *   3. Staff-paid refunds — money OUT, recorded separately from wallet voids
  *
  * Each row carries the current status (Active / Voided / Expired / Exhausted /
  * Pending / Settled / Reversed) so an "alteration" — voiding a cover, reversing
@@ -15,13 +16,14 @@
  */
 import { getDb } from './db';
 
-export type TxnKind = 'entry' | 'redemption';
+export type TxnKind = 'entry' | 'redemption' | 'refund';
 
 export type TxnStatus =
   | 'Active'      // wallet still has balance
-  | 'Exhausted'   // wallet fully redeemed
+  | 'Exhausted'   // wallet has no usable cover left
   | 'Expired'     // wallet hit expires_at
-  | 'Voided'      // admin force-voided the wallet (refund)
+  | 'Voided'      // admin disabled the wallet without a payment
+  | 'Refunded'    // staff recorded money returned
   | 'Pending'     // redemption not yet settled by cashier
   | 'Settled'     // redemption settled
   | 'Reversed';   // redemption was reversed
@@ -29,7 +31,7 @@ export type TxnStatus =
 export interface TransactionRow {
   /** Stable row id used for the Action column. */
   id: string;
-  /** 'entry' = wallet issuance row, 'redemption' = bar redemption row. */
+  /** Wallet issuance, bar redemption, or staff-paid refund. */
   kind: TxnKind;
   /** Customer-facing receipt number. Wallets use txn_id; redemptions use FB{rowid}. */
   invoice_no: string;
@@ -63,7 +65,7 @@ export interface TransactionFilters {
   from: number;
   /** Exclusive UTC ms. */
   to: number;
-  /** Limit to a single kind. Omit = both. */
+  /** Limit to a single kind. Omit = all. */
   kind?: TxnKind;
   /** Captain name (matches `redeemed_by`). 'all' or omit = no filter. */
   redeemedBy?: string;
@@ -87,6 +89,8 @@ export interface TransactionListResult {
     pending_amount: number;
     voided_count: number;
     reversed_count: number;
+    refunds_count: number;
+    refunds_amount: number;
   };
 }
 
@@ -149,7 +153,7 @@ export function listTransactions(filters: TransactionFilters): TransactionListRe
   const limit = Math.min(5000, Math.max(50, filters.limit ?? 1000));
 
   // ─── Entries (wallet issuances) ────────────────────────────────────────
-  const entryRows = filters.kind === 'redemption'
+  const entryRows = filters.kind && filters.kind !== 'entry'
     ? []
     : db.prepare(`
         SELECT
@@ -169,7 +173,7 @@ export function listTransactions(filters: TransactionFilters): TransactionListRe
       }>;
 
   // ─── Redemptions (cover spent at bar) ──────────────────────────────────
-  const redemptionRows = filters.kind === 'entry'
+  const redemptionRows = filters.kind && filters.kind !== 'redemption'
     ? []
     : db.prepare(`
         SELECT
@@ -237,6 +241,20 @@ export function listTransactions(filters: TransactionFilters): TransactionListRe
     });
   }
 
+  if (!filters.kind || filters.kind === 'refund') {
+    const refunds = db.prepare(`SELECT r.*, g.name AS customer_name, g.phone AS customer_phone
+      FROM wallet_refunds r JOIN wallets w ON w.txn_id = r.txn_id JOIN guests g ON g.id = w.guest_id
+      WHERE r.created_at >= ? AND r.created_at < ? ORDER BY r.created_at DESC LIMIT ?
+    `).all(filters.from, filters.to, limit) as Array<{ id: string; txn_id: string; amount_paise: number;
+      recorded_by: string; customer_name: string; customer_phone: string; created_at: number; method: string }>;
+    for (const r of refunds) rows.push({
+      id: `refund:${r.id}`, kind: 'refund', invoice_no: r.id, amount: -r.amount_paise / 100,
+      redeemed_by: r.recorded_by, customer_name: r.customer_name, customer_phone: r.customer_phone,
+      created_at: r.created_at, transaction_type: `Cover Refund · ${r.method.toUpperCase()}`,
+      status: 'Refunded', wallet_txn_id: r.txn_id, payment_method: r.method,
+    });
+  }
+
   // ─── Filters applied in JS so the SQL stays simple ─────────────────────
   let filtered = rows;
   if (filters.redeemedBy && filters.redeemedBy !== 'all') {
@@ -262,13 +280,16 @@ export function listTransactions(filters: TransactionFilters): TransactionListRe
     entries_count: 0, entries_amount: 0,
     redemptions_count: 0, redemptions_amount: 0,
     settled_amount: 0, pending_amount: 0,
-    voided_count: 0, reversed_count: 0,
+    voided_count: 0, reversed_count: 0, refunds_count: 0, refunds_amount: 0,
   };
   for (const r of filtered) {
     if (r.kind === 'entry') {
       totals.entries_count++;
       totals.entries_amount += r.amount;
       if (r.status === 'Voided') totals.voided_count++;
+    } else if (r.kind === 'refund') {
+      totals.refunds_count++;
+      totals.refunds_amount = Math.round((totals.refunds_amount - r.amount) * 100) / 100;
     } else {
       totals.redemptions_count++;
       totals.redemptions_amount += r.amount;

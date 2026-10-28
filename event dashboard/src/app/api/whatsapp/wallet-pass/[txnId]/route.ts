@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth';
-import { sendWalletPassWhatsApp } from '@/lib/whatsapp/wallet-pass-send';
+import { sendWalletPassWhatsApp, type SendPassResult } from '@/lib/whatsapp/wallet-pass-send';
 import { resolveRequestOrigin } from '@/lib/request-origin';
 
 export const runtime = 'nodejs';
@@ -16,8 +16,8 @@ export const dynamic = 'force-dynamic';
  * Force-sends regardless of AUTO_SEND_WHATSAPP_PASS toggle — the operator
  * making this call IS the decision.
  *
- * Body (optional): { qrCodeId?: string } — the 4-digit short code shown
- * under the QR. If omitted, the PNG renders without it.
+ * Body (optional): { format?: 'image' | 'pdf', qrCodeId?: string }.
+ * PDF uses the wallet's stored recipient and never embeds its PIN.
  */
 export async function POST(req: NextRequest, ctx: { params: Promise<{ txnId: string }> }) {
   const session = await requireRole(['host', 'manager', 'entry']);
@@ -26,7 +26,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ txnId: str
   }
 
   const { txnId } = await ctx.params;
-  const body = await req.json().catch(() => ({})) as { qrCodeId?: string };
+  const body = await req.json().catch(() => ({})) as { qrCodeId?: string; format?: 'image' | 'pdf' } | null;
+  if (!body || (body.format !== undefined && body.format !== 'image' && body.format !== 'pdf')) {
+    return NextResponse.json({ ok: false, message: 'Invalid voucher format.' }, { status: 400 });
+  }
 
   const origin = resolveRequestOrigin(req);
   const result = await sendWalletPassWhatsApp({
@@ -35,17 +38,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ txnId: str
     qrCodeId: body.qrCodeId,
     actor: session.name,
     force: true,
-  });
+    format: body.format,
+  }).catch((): SendPassResult => ({ ok: false, error: 'WhatsApp could not be confirmed. Check Interakt before retrying.' }));
 
   if (!result.ok) {
     return NextResponse.json(
-      { ok: false, message: result.error || result.skipped || 'WhatsApp send failed.' },
+      { ok: false, message: result.error || 'WhatsApp send failed.' },
       { status: 400 },
     );
   }
   return NextResponse.json({
     ok: true,
     messageId: result.messageId,
-    message: 'WhatsApp pass sent.',
+    message: 'Accepted by WhatsApp provider. Delivery is not yet confirmed.',
   });
 }

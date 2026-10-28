@@ -8,8 +8,10 @@ import { PhoneInput } from '@/components/PhoneInput';
 import { ReservationSearch, type ReservationSearchHit } from '@/components/ReservationSearch';
 import type { Event } from '@/lib/events';
 import { hasAtMostTwoDecimals, MAX_WALLET_AMOUNT_INR } from '@/lib/money';
+import { EventCollections } from '@/components/EventCollections';
+import { COLLECTION_METHODS, type CollectionMethod } from '@/lib/collection-types';
 
-type PaymentMethod = 'cash' | 'upi' | 'card' | 'online' | 'razorpay';
+type PaymentMethod = CollectionMethod;
 
 interface IssueResult {
   txnId: string;
@@ -18,6 +20,9 @@ interface IssueResult {
   captainUrl: string;
   qrDataUrl: string;
   guestName: string;
+  guestPhone: string;
+  whatsappQueued?: boolean;
+  whatsappFormat?: 'image' | 'pdf';
   expiresAt?: number;
   expiresAtLabel?: string;
 }
@@ -47,13 +52,7 @@ interface CalcResult {
   message?: string;
 }
 
-const PAYMENTS: { value: PaymentMethod; label: string }[] = [
-  { value: 'cash', label: 'Cash' },
-  { value: 'upi', label: 'UPI' },
-  { value: 'card', label: 'Card' },
-  { value: 'online', label: 'Online' },
-  { value: 'razorpay', label: 'Razorpay' },
-];
+const PAYMENTS = COLLECTION_METHODS;
 
 export default function IssueCoverPage() {
   return (
@@ -200,6 +199,12 @@ function IssueClient() {
   }
 
   const totalPax = male + female + couple * 2;
+  const missingDetails = [
+    !eventId && 'an event',
+    !name.trim() && 'guest name',
+    !phone.trim() && 'a valid phone number',
+    totalPax === 0 && 'at least one guest (Male, Female or Couple)',
+  ].filter(Boolean);
 
   // Use override values if set, else engine values.
   // Complimentary entries live in /admin/tickets (Offline Ticketing) — not here at the entrance.
@@ -211,6 +216,7 @@ function IssueClient() {
     e.preventDefault();
     setError(null);
 
+    if (!eventId) { setError('Select an event before issuing cover.'); return; }
     if (!name.trim() || !phone.trim()) { setError('Name and phone are required.'); return; }
     if (totalPax === 0) { setError('Add at least one guest (Male / Female / Couple).'); return; }
     if (entryFinal < 0 || coverFinal < 0) { setError('Entry / cover cannot be negative.'); return; }
@@ -243,7 +249,7 @@ function IssueClient() {
       });
       const data = await res.json();
       if (!data.ok) setError(data.message || 'Failed to issue wallet.');
-      else setResult({ ...data, guestName: name.trim() });
+      else setResult({ ...data, guestName: name.trim(), guestPhone: phone.trim() });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error');
     } finally {
@@ -271,6 +277,25 @@ function IssueClient() {
         event's pricing config (Male / Female / Couple rates).
       </p>
 
+      <div className="card mt-6">
+        <label className="label" htmlFor="issue-event">Event</label>
+        {events.length === 0 ? (
+          <div className="text-xs text-amber-700">
+            No events found. <Link className="underline" href="/admin/events">Create one first →</Link>
+          </div>
+        ) : (
+          <select id="issue-event" className="input" value={eventId} disabled={busy || !!result}
+            onChange={(e) => { setEventId(e.target.value); setOverride(false); }}>
+            {events.map((ev) => (
+              <option key={ev.id} value={ev.id}>{ev.event_date} · {ev.name} ({ev.status})</option>
+            ))}
+          </select>
+        )}
+      </div>
+      <EventCollections key={eventId} eventId={eventId} refreshKey={result?.txnId || ''}
+        onRefundRecorded={(refund) => setResult((current) => current?.txnId === refund.txnId
+          ? { ...current, balance: refund.balanceAfter } : current)} />
+
       {reservationId && (
         <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50 text-sky-700 px-3 py-2 text-sm">
           Prefilled from reservation <span className="font-mono text-xs">{reservationId}</span>.
@@ -289,40 +314,15 @@ function IssueClient() {
 
       {!result && (
         <form onSubmit={issue} className="card mt-4 space-y-5">
-          {error && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3 text-sm">
-              {error}
-            </div>
-          )}
-
-          {/* Event */}
-          <div>
-            <label className="label">Event</label>
-            {events.length === 0 ? (
-              <div className="text-xs text-amber-700">
-                No events found. <Link className="underline" href="/admin/events">Create one first →</Link>
-              </div>
-            ) : (
-              <select className="input" value={eventId}
-                      onChange={(e) => { setEventId(e.target.value); setOverride(false); }}>
-                {events.map((ev) => (
-                  <option key={ev.id} value={ev.id}>
-                    {ev.event_date} · {ev.name} ({ev.status})
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
           {/* Customer */}
           <div>
-            <label className="label">Guest name</label>
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)}
-                   placeholder="e.g. Rohit Kumar" autoFocus />
+            <label className="label" htmlFor="issue-guest-name">Guest name</label>
+            <input id="issue-guest-name" className="input" value={name} onChange={(e) => setName(e.target.value)}
+                   placeholder="e.g. Rohit Kumar" required autoFocus />
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_1fr] gap-4">
             <div>
-              <label className="label">Phone</label>
+              <label className="label">Customer WhatsApp number</label>
               <PhoneInput
                 value={phone}
                 onChange={setPhone}
@@ -380,6 +380,7 @@ function IssueClient() {
 
           <div>
             <label className="label">Payment method</label>
+            {paymentMethod === 'razorpay' && <p className="text-xs text-slate-500 mb-2">Record a payment already collected through Razorpay.</p>}
             <div className="flex flex-wrap gap-2">
               {PAYMENTS.map((p) => (
                 <button
@@ -397,9 +398,23 @@ function IssueClient() {
             </div>
           </div>
 
+          {missingDetails.length > 0 && (
+            <p id="issue-cover-readiness" role="status" className="text-sm text-amber-800 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              To issue cover, add {missingDetails.join(', ')}.
+            </p>
+          )}
+
+          {error && (
+            <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3 text-sm">
+              {error}
+            </div>
+          )}
+
           <button
+            type="submit"
             className="btn btn-primary w-full"
-            disabled={busy || !eventId || totalPax === 0}
+            disabled={busy}
+            aria-describedby={missingDetails.length > 0 ? 'issue-cover-readiness' : undefined}
           >
             {busy ? 'Issuing…' : `Issue wallet · Collect ${formatMoney(totalAtDoor)}`}
           </button>
@@ -437,6 +452,8 @@ function IssueClient() {
               </div>
             </div>
           </div>
+
+          <WhatsAppVoucher key={result.txnId} result={result} />
 
           <div className="mt-6 flex flex-col md:flex-row gap-3">
             <button
@@ -496,7 +513,7 @@ function IssueClient() {
                 }
               }}
             >
-              ↓ Receipt PDF
+              ↓ Download voucher PDF
             </button>
             <button className="btn btn-secondary flex-1" onClick={resetForNext}>Issue next wallet</button>
           </div>
@@ -513,6 +530,55 @@ function IssueClient() {
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────────
+
+function WhatsAppVoucher({ result }: { result: IssueResult }) {
+  const [status, setStatus] = useState<'idle' | 'sending' | 'accepted' | 'failed'>('idle');
+  const [message, setMessage] = useState('');
+  const sending = useRef(false);
+  const autoPdf = result.whatsappQueued && result.whatsappFormat === 'pdf';
+
+  async function send() {
+    if (sending.current || status === 'accepted') return;
+    sending.current = true;
+    setStatus('sending');
+    setMessage('Sending PDF voucher…');
+    try {
+      const response = await fetch(`/api/whatsapp/wallet-pass/${encodeURIComponent(result.txnId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format: 'pdf' }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.message || 'Could not send the voucher.');
+      setStatus('accepted');
+      setMessage('Voucher accepted for WhatsApp delivery. Delivery to the customer is not yet confirmed.');
+    } catch (error) {
+      setStatus('failed');
+      setMessage(error instanceof Error ? error.message : 'Could not confirm sending. Check Interakt before retrying.');
+    } finally {
+      sending.current = false;
+    }
+  }
+
+  return (
+    <section aria-labelledby="whatsapp-voucher-heading" className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+      <h2 id="whatsapp-voucher-heading" className="font-semibold text-slate-900">Send cover voucher</h2>
+      <p className="mt-1 text-sm text-slate-600">PDF voucher to <strong>{result.guestPhone}</strong>, with the cover amount, QR and wallet link.</p>
+      {result.whatsappQueued && status === 'idle' && (
+        <p className="mt-2 text-sm text-slate-600">
+          Automatic {autoPdf ? 'PDF voucher' : 'image pass'} sending has started. Check WhatsApp delivery before sending again.
+        </p>
+      )}
+      <button type="button" className="btn btn-primary mt-3 w-full"
+        onClick={send} disabled={status === 'sending' || status === 'accepted'}>
+        {status === 'sending' ? 'Sending voucher…' : status === 'accepted' ? 'Accepted for delivery'
+          : status === 'failed' ? 'Retry WhatsApp voucher' : autoPdf ? 'Send PDF voucher again' : 'Send voucher on WhatsApp'}
+      </button>
+      {message && <p role={status === 'failed' ? 'alert' : 'status'} className={`mt-3 text-sm ${status === 'failed' ? 'text-rose-700' : 'text-emerald-800'}`}>{message}</p>}
+      {status === 'failed' && <p className="mt-1 text-xs text-slate-600">The wallet is already issued. You can retry here or download the voucher below.</p>}
+    </section>
+  );
+}
 
 /**
  * Copy-link button with explicit feedback + manual-copy fallback.

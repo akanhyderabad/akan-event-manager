@@ -41,11 +41,13 @@ export default function WhatsAppSettingsPage() {
   const [businessPhone, setBusinessPhone] = useState('');
   /** When true, OTP_PROVIDER is set to 'whatsapp' (Interakt). When false, falls back to 'console'. */
   const [useWhatsAppForOtp, setUseWhatsAppForOtp] = useState(false);
-  /** When true, AUTO_SEND_WHATSAPP_PASS is set to '1'. Wallet PNG passes are
-   *  pushed to customers' WhatsApp the moment door staff issue them. */
+  /** Automatically send the selected attachment after wallet issue. */
   const [autoSendPass, setAutoSendPass] = useState(false);
   const [passTemplate, setPassTemplate] = useState('akan_cover_pass');
   const [passTemplateLang, setPassTemplateLang] = useState('en');
+  const [passFormat, setPassFormat] = useState<'image' | 'pdf'>('image');
+  const [voucherTemplate, setVoucherTemplate] = useState('');
+  const [voucherLanguage, setVoucherLanguage] = useState('en');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -94,6 +96,9 @@ export default function WhatsAppSettingsPage() {
       setAutoSendPass(autoVal === '1' || autoVal === 'true');
       setPassTemplate(c.WALLET_PASS_TEMPLATE || 'akan_cover_pass');
       setPassTemplateLang(c.WALLET_PASS_TEMPLATE_LANG || 'en');
+      setPassFormat(c.WALLET_PASS_FORMAT === 'pdf' ? 'pdf' : 'image');
+      setVoucherTemplate(c.WALLET_VOUCHER_TEMPLATE || '');
+      setVoucherLanguage(c.WALLET_VOUCHER_TEMPLATE_LANG || 'en');
       setLoaded(true);
     });
     refreshStatus();
@@ -105,6 +110,10 @@ export default function WhatsAppSettingsPage() {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    if (autoSendPass && passFormat === 'pdf' && !voucherTemplate.trim()) {
+      setError('Enter the approved PDF document template before enabling automatic PDF delivery.');
+      return;
+    }
     setSaving(true); setError(null); setSaved(null);
     try {
       const res = await fetch('/api/config', {
@@ -117,10 +126,13 @@ export default function WhatsAppSettingsPage() {
             // Flip the OTP delivery channel together with credentials so the
             // host has one save button for the whole flow.
             OTP_PROVIDER: useWhatsAppForOtp ? 'whatsapp' : 'console',
-            // Wallet pass auto-send (PNG via Interakt with image header)
+            // Separate template names preserve existing image header approvals.
             AUTO_SEND_WHATSAPP_PASS: autoSendPass ? '1' : '0',
             WALLET_PASS_TEMPLATE: passTemplate.trim() || 'akan_cover_pass',
             WALLET_PASS_TEMPLATE_LANG: passTemplateLang.trim() || 'en',
+            WALLET_PASS_FORMAT: passFormat,
+            WALLET_VOUCHER_TEMPLATE: voucherTemplate.trim(),
+            WALLET_VOUCHER_TEMPLATE_LANG: voucherLanguage.trim() || 'en',
           },
         }),
       });
@@ -208,7 +220,7 @@ export default function WhatsAppSettingsPage() {
       </div>
       <p className="text-sm text-slate-500 mt-1 max-w-2xl">
         Configure WhatsApp delivery via Interakt. Used for OTP login, reservation
-        confirmations and ticket confirmations. Only the host can edit these settings.
+        confirmations, ticket confirmations and cover vouchers. Only the host can edit these settings.
       </p>
 
       {/* Connection health banner */}
@@ -327,64 +339,63 @@ export default function WhatsAppSettingsPage() {
           </label>
         </div>
 
-        {/* Wallet pass auto-send toggle + template config */}
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-1 accent-brand-500 cursor-pointer"
-              checked={autoSendPass}
-              onChange={(e) => setAutoSendPass(e.target.checked)}
-              disabled={!config.secretMasked && !apiSecret}
-            />
-            <div className="flex-1">
-              <div className="text-sm font-semibold text-slate-900">
-                Auto-send cover pass on issue
-              </div>
-              <div className="text-xs text-slate-500 mt-1">
-                When ON, every wallet issued at the door fires a WhatsApp message
-                to the customer with the PNG cover pass as the message image.
-                Captain scans the QR straight off their phone — no PDF tap-through.
-                Uses your{' '}
-                <span className="font-mono">{passTemplate || 'akan_cover_pass'}</span>
-                {' '}template (image header).
-              </div>
-              {!config.secretMasked && !apiSecret && (
-                <div className="text-[11px] text-amber-700 mt-1.5">
-                  Save an Interakt API secret first to enable this toggle.
-                </div>
-              )}
-              {autoSendPass && (
-                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="label text-xs">Template name</label>
-                    <input
-                      className="input font-mono text-sm"
-                      value={passTemplate}
-                      onChange={(e) => setPassTemplate(e.target.value)}
-                      placeholder="akan_cover_pass"
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </div>
-                  <div>
-                    <label className="label text-xs">Language code</label>
-                    <input
-                      className="input font-mono text-sm"
-                      value={passTemplateLang}
-                      onChange={(e) => setPassTemplateLang(e.target.value)}
-                      placeholder="en"
-                      maxLength={6}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </div>
-                  <div className="sm:col-span-2 text-[11px] text-slate-500">
-                    Approve a template in Interakt with: HEADER=Image, BODY=
-                    <span className="font-mono">{`Hi {{1}}, your cover pass for {{2}} is ready. Show this QR at the door — no PIN needed for scan.`}</span>
-                  </div>
-                </div>
-              )}
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
+          <h2 className="text-sm font-semibold text-slate-900">Cover vouchers</h2>
+          <p className="text-xs text-slate-600">Staff can send a PDF voucher to the customer's WhatsApp number after issuing a wallet.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="voucher-template" className="label text-xs">Approved PDF template name</label>
+              <input id="voucher-template" className="input font-mono text-sm" value={voucherTemplate}
+                onChange={(e) => setVoucherTemplate(e.target.value)} placeholder="cover_issued" />
             </div>
+            <div>
+              <label htmlFor="voucher-language" className="label text-xs">PDF template language</label>
+              <input id="voucher-language" className="input text-sm" value={voucherLanguage}
+                onChange={(e) => setVoucherLanguage(e.target.value)} placeholder="en" maxLength={10} />
+            </div>
+          </div>
+          <details className="text-xs text-slate-600">
+            <summary className="cursor-pointer font-medium">PDF template setup</summary>
+            <p className="mt-2">Use a Document header with no buttons. Akan's approved <span className="font-mono">cover_issued</span> template uses customer name, cover amount, QR code ID and expiry in IST. The QR code ID matches the attached PDF.</p>
+            <p className="mt-2">Other template names use the five-variable message below and need their own approval. The existing <span className="font-mono">cover_issued</span> message does not include a wallet link.</p>
+            <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-white border border-slate-200 p-3 font-sans">{`Hi {{1}},
+
+A cover has been generated for your account at {{2}}.
+Cover amount: ₹{{3}}
+Cover ID: {{4}}
+The cover details are attached as a PDF.
+View balance or top up: {{5}}
+
+This is an automated update.`}</pre>
+            <p className="mt-2">Attachments need a publicly accessible HTTPS website. Sending is unavailable from a local preview.</p>
+          </details>
+          <label className="flex items-center gap-3 cursor-pointer text-sm font-medium">
+            <input type="checkbox" className="accent-brand-500" checked={autoSendPass}
+              onChange={(e) => setAutoSendPass(e.target.checked)} disabled={!config.secretMasked && !apiSecret} />
+            Automatically send on wallet issue
           </label>
+          <div>
+            <label htmlFor="auto-pass-format" className="label text-xs">Automatic attachment</label>
+            <select id="auto-pass-format" className="input" value={passFormat}
+              onChange={(e) => setPassFormat(e.target.value as 'image' | 'pdf')}>
+              <option value="image">Image pass</option>
+              <option value="pdf">PDF voucher</option>
+            </select>
+          </div>
+          {passFormat === 'image' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="image-pass-template" className="label text-xs">Image template name</label>
+                <input id="image-pass-template" className="input font-mono text-sm" value={passTemplate}
+                  onChange={(e) => setPassTemplate(e.target.value)} placeholder="akan_cover_pass" />
+              </div>
+              <div>
+                <label htmlFor="image-pass-language" className="label text-xs">Image template language</label>
+                <input id="image-pass-language" className="input text-sm" value={passTemplateLang}
+                  onChange={(e) => setPassTemplateLang(e.target.value)} placeholder="en" maxLength={10} />
+              </div>
+            </div>
+          )}
         </div>
 
         {error && (

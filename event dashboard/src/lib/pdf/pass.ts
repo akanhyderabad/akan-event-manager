@@ -65,7 +65,7 @@ export async function generatePassPdf(input: PassPdfInput): Promise<Uint8Array> 
 
   // ─── PASS 1 — pre-compute footer height so we can reserve it ────────────
   const termsRaw = input.termsText ||
-    'You will receive the PIN via WhatsApp. Do not share the PIN with Club staff for the safety of the vouchers.';
+    'Show this QR when redeeming your cover. Keep your voucher and PIN private. Entry fees are not redeemable.';
   const termsLines = wrapText(helv, termsRaw, contentWidth, 9);
   const termsHeight = termsLines.length * 11.5;
   const poweredHeight = 12;
@@ -154,6 +154,10 @@ export async function generatePassPdf(input: PassPdfInput): Promise<Uint8Array> 
   drawer.gap(6);
   drawer.centered(`Cover loaded   INR ${input.coverAmount.toLocaleString('en-IN')}`, {
     font: helv, size: 10, center,
+  });
+  drawer.gap(4);
+  drawer.centered(truncateToWidth(helv, `Cover ID: ${input.txnId}`, contentWidth, 8), {
+    font: helv, size: 8, center,
   });
   drawer.gap(4);
   if (input.expiresAt) {

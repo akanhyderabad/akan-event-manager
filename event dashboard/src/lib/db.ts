@@ -4,6 +4,7 @@ import fs from 'fs';
 import bcrypt from 'bcryptjs';
 import { nanoid } from 'nanoid';
 import { defaultEventDate } from './expiry';
+import { initWalletRefundSchema } from './wallet-refund-schema';
 
 const DB_DIR = path.join(process.cwd(), 'data');
 const DB_PATH = path.join(DB_DIR, 'eventcover.db');
@@ -299,6 +300,10 @@ function initSchema(db: Database.Database) {
     ['AUTO_SEND_WHATSAPP_PASS', '0'],
     ['WALLET_PASS_TEMPLATE', 'akan_cover_pass'],
     ['WALLET_PASS_TEMPLATE_LANG', 'en'],
+    // Keep existing image templates unchanged until a document template is approved.
+    ['WALLET_PASS_FORMAT', 'image'],
+    ['WALLET_VOUCHER_TEMPLATE', ''],
+    ['WALLET_VOUCHER_TEMPLATE_LANG', 'en'],
     // Append wallet-view URL as {{3}}; flip to '0' for legacy 2-var templates.
     ['WALLET_PASS_TEMPLATE_INCLUDE_LINK', '1'],
     // TTL (days) for the wallet-view HMAC token embedded in the {{3}} URL.
@@ -426,6 +431,7 @@ function migrate(db: Database.Database) {
   if (!walletCols.some((c) => c.name === 'reservation_id')) {
     db.exec('ALTER TABLE wallets ADD COLUMN reservation_id TEXT');
   }
+  initWalletRefundSchema(db);
 
   // Events wizard columns — additive so legacy event rows keep working.
   const eventCols = db.prepare('PRAGMA table_info(events)').all() as { name: string }[];

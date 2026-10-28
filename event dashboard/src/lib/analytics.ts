@@ -147,7 +147,9 @@ function computeKpis(from: number | undefined, to: number | undefined): Analytic
 
   const paymentBreakdown = { online: 0, cash: 0, card: 0, upi: 0, ticket: 0 };
   for (const r of payRows) {
-    if (r.payment_method in paymentBreakdown) {
+    if (r.payment_method === 'razorpay') {
+      paymentBreakdown.online += r.amount || 0;
+    } else if (r.payment_method in paymentBreakdown) {
       paymentBreakdown[r.payment_method as keyof typeof paymentBreakdown] += r.amount || 0;
     }
   }

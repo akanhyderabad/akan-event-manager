@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllConfig, setConfig } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
+import { requireRole } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -39,6 +40,9 @@ const EDITABLE_KEYS = new Set([
   'AUTO_SEND_WHATSAPP_PASS',
   'WALLET_PASS_TEMPLATE',
   'WALLET_PASS_TEMPLATE_LANG',
+  'WALLET_PASS_FORMAT',
+  'WALLET_VOUCHER_TEMPLATE',
+  'WALLET_VOUCHER_TEMPLATE_LANG',
   'WALLET_PASS_TEMPLATE_INCLUDE_LINK',
   'WALLET_VIEW_TOKEN_TTL_DAYS',
   // Razorpay payment gateway (host-only sub-page)
@@ -76,6 +80,7 @@ const EDITABLE_KEYS = new Set([
  * EDITABLE_KEYS), but reading them back out of the API is impossible.
  */
 const SENSITIVE_KEYS = new Set([
+  'SESSION_SECRET',
   'INTERAKT_API_SECRET',
   'RESERVEGO_WEBHOOK_SECRET',
   'META_CAPI_ACCESS_TOKEN',
@@ -87,6 +92,13 @@ const SENSITIVE_KEYS = new Set([
 ]);
 
 const MASKED = '••••••••';
+const PRIVATE_HEADERS = { 'Cache-Control': 'private, no-store' };
+
+// Integration sub-pages are host-only. Enforce that on the shared write API
+// too, even when a different role has an explicit grant to general Settings.
+const HOST_ONLY_KEYS = new Set([...EDITABLE_KEYS].filter((key) =>
+  /^(INTERAKT_|OTP_PROVIDER$|WHATSAPP_OTP_|RESERVEGO_|META_|AUTO_SEND_WHATSAPP_PASS$|WALLET_PASS_|WALLET_VOUCHER_|WALLET_VIEW_TOKEN_|RAZORPAY_)/.test(key),
+));
 
 function safeConfig(): Record<string, string> {
   const all = getAllConfig();
@@ -102,14 +114,26 @@ function safeConfig(): Record<string, string> {
 }
 
 export async function GET() {
-  return NextResponse.json({ ok: true, config: safeConfig() });
+  const session = await requireRole(['host', 'manager']);
+  if ('forbidden' in session) {
+    return NextResponse.json({ ok: false, message: session.message }, { status: session.status, headers: PRIVATE_HEADERS });
+  }
+  return NextResponse.json({ ok: true, config: safeConfig() }, { headers: PRIVATE_HEADERS });
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
+  const session = await requireRole(['host', 'manager']);
+  if ('forbidden' in session) {
+    return NextResponse.json({ ok: false, message: session.message }, { status: session.status, headers: PRIVATE_HEADERS });
+  }
+  const body = await req.json().catch(() => null);
   const updates = body?.updates;
-  if (!updates || typeof updates !== 'object') {
+  if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
     return NextResponse.json({ ok: false, message: 'updates object required' }, { status: 400 });
+  }
+  // Reject the entire request before any writes, including mixed batches.
+  if (session.role !== 'host' && Object.keys(updates).some((key) => HOST_ONLY_KEYS.has(key))) {
+    return NextResponse.json({ ok: false, message: 'Only the host can change integration settings.' }, { status: 403, headers: PRIVATE_HEADERS });
   }
 
   const applied: Record<string, string> = {};
@@ -126,12 +150,12 @@ export async function POST(req: NextRequest) {
     applied[key] = SENSITIVE_KEYS.has(key) ? (v ? MASKED : '') : v;
   }
 
-  logAudit({ actor: 'admin', action: 'config_update', details: applied });
+  logAudit({ actor: session.name, action: 'config_update', details: applied });
 
   return NextResponse.json({
     ok: true,
     applied,
     rejected,
     config: safeConfig(),
-  });
+  }, { headers: PRIVATE_HEADERS });
 }

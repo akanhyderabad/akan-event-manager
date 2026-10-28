@@ -39,6 +39,7 @@ export function computeDashboard(): DashboardKpis {
     upi: { amount: 0, count: 0 },
     card: { amount: 0, count: 0 },
     online: { amount: 0, count: 0 },
+    razorpay: { amount: 0, count: 0 },
     comp: { amount: 0, count: 0 },
   };
   for (const r of payRows) {

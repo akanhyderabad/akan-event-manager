@@ -10,8 +10,8 @@
  *   INTERAKT_API_SECRET       — Basic Auth secret from Interakt dashboard
  *   INTERAKT_BUSINESS_PHONE   — your verified WhatsApp Business number (display)
  *
- * Rate limit (current Interakt plan): 40 req/min. The sender enforces a
- * 1500 ms minimum gap between calls so batch sends don't 429.
+ * Provider rate limits are returned to the caller; requests are not retried
+ * automatically because acceptance may be uncertain after a network timeout.
  */
 import { getConfig } from '@/lib/db';
 
@@ -30,6 +30,8 @@ export interface InteraktSendInput {
   bodyValues?: string[];
   /** Values for header variables, if the header has any. */
   headerValues?: string[];
+  /** Attachment filename for an approved DOCUMENT-header template. */
+  fileName?: string;
   /**
    * Values for buttons that take variables (e.g. Authentication templates'
    * Copy Code button must receive the OTP code as a parameter).
@@ -52,7 +54,7 @@ export interface InteraktSendResult {
 }
 
 export function isInteraktConfigured(): boolean {
-  return !!getConfig('INTERAKT_API_SECRET', '');
+  return !!getConfig('INTERAKT_API_SECRET', '').trim();
 }
 
 function authHeader(): string {
@@ -72,6 +74,9 @@ function authHeader(): string {
 export function splitPhone(input: string): { countryCode: string; phoneNumber: string } {
   const cleaned = String(input || '').replace(/[^\d+]/g, '');
   if (cleaned.startsWith('+91')) return { countryCode: '+91', phoneNumber: cleaned.slice(3) };
+  // Match the international countries offered by PhoneInput, longest first.
+  const dialCode = ['+971', '+966', '+44', '+65', '+61', '+1'].find((code) => cleaned.startsWith(code));
+  if (dialCode) return { countryCode: dialCode, phoneNumber: cleaned.slice(dialCode.length) };
   if (cleaned.startsWith('91') && cleaned.length === 12) return { countryCode: '+91', phoneNumber: cleaned.slice(2) };
   if (cleaned.length === 10) return { countryCode: '+91', phoneNumber: cleaned };
   // Generic E.164 — try to split at the +
@@ -104,21 +109,12 @@ export async function sendInteraktTemplate(input: InteraktSendInput): Promise<In
       languageCode: input.languageCode,
       headerValues: input.headerValues ?? [],
       bodyValues: input.bodyValues ?? [],
+      ...(input.fileName ? { fileName: input.fileName } : {}),
       ...(input.buttonValues ? { buttonValues: input.buttonValues } : {}),
     },
   };
 
-  // Diagnostic summary — does NOT leak the secret. Shows length, first 4,
-  // last 4 chars so we can sanity-check what's stored vs what the user pasted.
-  const secret = getConfig('INTERAKT_API_SECRET', '').trim();
-  const secretSummary = secret
-    ? `len=${secret.length}, head=${secret.slice(0, 4)}…tail=…${secret.slice(-4)}`
-    : '(empty)';
-  /* eslint-disable no-console */
-  console.log(`[interakt] POST ${INTERAKT_ENDPOINT}`);
-  console.log(`[interakt] auth: ${auth.slice(0, 10)}… (${secretSummary})`);
-  console.log(`[interakt] body:`, JSON.stringify(body));
-  /* eslint-enable no-console */
+  // Never log credentials, customer numbers, OTPs or signed attachment URLs.
 
   let res: Response;
   try {
@@ -126,9 +122,10 @@ export async function sendInteraktTemplate(input: InteraktSendInput): Promise<In
       method: 'POST',
       headers: { Authorization: auth, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20_000),
     });
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'network error' };
+  } catch {
+    return { ok: false, error: 'WhatsApp request could not be confirmed. Check Interakt before retrying.' };
   }
 
   const status = res.status;
@@ -136,26 +133,25 @@ export async function sendInteraktTemplate(input: InteraktSendInput): Promise<In
   let rawText = '';
   try {
     rawText = await res.text();
-    payload = rawText ? JSON.parse(rawText) as Record<string, unknown> : {};
+    const parsed: unknown = rawText ? JSON.parse(rawText) : null;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      payload = parsed as Record<string, unknown>;
+    }
   } catch { /* not all errors return JSON */ }
 
-  /* eslint-disable no-console */
-  console.log(`[interakt] ← ${status} :: ${rawText.slice(0, 300)}`);
-  /* eslint-enable no-console */
-
-  if (!res.ok) {
+  if (!res.ok || payload.result === false) {
     const message =
-      (payload?.message as string) ||
-      (payload?.result as string) ||
+      (typeof payload.message === 'string' && payload.message.replace(/https?:\/\/\S+/g, '[link omitted]')) ||
       `Interakt API ${status}`;
     return { ok: false, error: message, status };
   }
 
   // Interakt success envelope varies by version — pull a message id where we can find it.
-  const messageId =
-    (payload?.id as string) ||
-    ((payload?.data as Record<string, string>)?.id as string) ||
-    undefined;
+  const nestedId = (payload.data as { id?: unknown } | undefined)?.id;
+  const messageId = typeof payload.id === 'string' ? payload.id
+    : typeof nestedId === 'string' ? nestedId : undefined;
+
+  if (!messageId) return { ok: false, error: 'WhatsApp acceptance could not be confirmed. Check Interakt before retrying.', status };
 
   return { ok: true, messageId, status };
 }

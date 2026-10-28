@@ -532,7 +532,7 @@ function WalletContent(props: WalletContentProps) {
       return wallet.expiresAt
         ? `Expired on ${formatDate(wallet.expiresAt)}.`
         : 'This wallet has expired.';
-    if (wallet.status === 'voided') return 'This wallet was refunded.';
+    if (wallet.status === 'voided') return 'This wallet has been disabled. Contact the venue for details.';
     return null;
   })();
 

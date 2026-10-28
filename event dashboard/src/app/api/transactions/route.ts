@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
  *
  * Query params:
  *   from, to       — UTC ms (defaults to last 7 days)
- *   kind           — 'entry' | 'redemption' (omit = both)
+ *   kind           — 'entry' | 'redemption' | 'refund' (omit = all)
  *   redeemedBy     — exact match on staff name
  *   q              — search across invoice/customer/phone/staff/amount
  *   limit          — capped at 5000
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   const from = Number(sp.get('from')) || (Date.now() - 7 * 24 * 3600 * 1000);
   const to   = Number(sp.get('to'))   || Date.now() + 1000;
   const kindRaw = sp.get('kind');
-  const kind = kindRaw === 'entry' || kindRaw === 'redemption' ? kindRaw : undefined;
+  const kind = kindRaw === 'entry' || kindRaw === 'redemption' || kindRaw === 'refund' ? kindRaw : undefined;
   const redeemedBy = sp.get('redeemedBy') || undefined;
   const q = sp.get('q') || undefined;
   const limit = Math.min(5000, Math.max(50, Number(sp.get('limit')) || 1000));

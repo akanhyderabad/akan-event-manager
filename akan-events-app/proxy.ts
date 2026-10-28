@@ -12,10 +12,12 @@ import { NextRequest, NextResponse } from 'next/server';
  * https via the dashboard app.)
  *
  * Next.js 16 renamed the `middleware` convention to `proxy` — same behaviour.
+ * Next.js also supplies x-forwarded-proto for local requests. Keep plain HTTP
+ * available in development, where the dev server does not terminate TLS.
  */
 export function proxy(req: NextRequest) {
   const proto = req.headers.get('x-forwarded-proto');
-  if (proto === 'http') {
+  if (process.env.NODE_ENV === 'production' && proto === 'http') {
     const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || req.nextUrl.host;
     const url = new URL(`${req.nextUrl.pathname}${req.nextUrl.search}`, `https://${host}`);
     return NextResponse.redirect(url, 308);

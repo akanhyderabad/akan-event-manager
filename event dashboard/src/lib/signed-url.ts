@@ -100,8 +100,37 @@ export function verifyWalletPassToken(token: string): WalletPassPayload | null {
     return null;
   }
   if (!payload?.txnId || typeof payload.exp !== 'number') return null;
+  // Legacy image tokens have no purpose. Do not accept view or PDF tokens.
+  if ('purpose' in payload) return null;
   if (payload.exp <= Date.now()) return null;
   return payload;
+}
+
+/** Separate, short-lived media token; never includes the customer's PIN. */
+export function signWalletVoucherToken(input: { txnId: string; ttlSeconds?: number }): string {
+  const payload = b64urlEncode(JSON.stringify({
+    txnId: input.txnId,
+    purpose: 'wallet_voucher',
+    exp: Date.now() + (input.ttlSeconds ?? 86400) * 1000,
+  }));
+  const sig = createHmac('sha256', getSecret()).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+
+export function verifyWalletVoucherToken(token: string): { txnId: string; exp: number } | null {
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [payloadB64, sig] = parts;
+  if (!payloadB64 || !sig) return null;
+  const expected = createHmac('sha256', getSecret()).update(payloadB64).digest();
+  const provided = b64urlDecode(sig);
+  if (!provided || provided.length !== expected.length || !timingSafeEqual(expected, provided)) return null;
+  try {
+    const payload = JSON.parse(b64urlDecode(payloadB64)!.toString('utf8'));
+    if (payload.purpose !== 'wallet_voucher' || typeof payload.txnId !== 'string' || !payload.txnId
+      || !Number.isFinite(payload.exp) || payload.exp <= Date.now()) return null;
+    return { txnId: payload.txnId, exp: payload.exp };
+  } catch { return null; }
 }
 
 // ─── Wallet-view tokens ───────────────────────────────────────────────────

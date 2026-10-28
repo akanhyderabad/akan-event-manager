@@ -160,54 +160,20 @@ export function sweepExpired(): number {
   return toExpire.length;
 }
 
-/**
- * Void an active wallet — used by admin to refund / write off a cover.
- *
- * Forces balance to 0 and marks the wallet 'exhausted' (semantically "no longer
- * spendable"). Emits a critical `wallet_void` audit row so the action is
- * unmistakable on the History page. If a refund amount is recorded it's logged
- * in the details payload.
- *
- * Returns true if a state change happened, false if the wallet was already
- * inactive (no-op, no audit).
- */
-export function voidWallet(
-  txnId: string,
-  actor: string,
-  opts: { reason?: string; refundAmount?: number } = {},
-): boolean {
+/** Disable an active wallet without recording any money returned to the guest. */
+export function voidWallet(txnId: string, actor: string, opts: { reason?: string } = {}): boolean {
   const db = getDb();
-  const wallet = db.prepare(`
-    SELECT balance, status, cover_issued, guest_id
-    FROM wallets WHERE txn_id = ?
-  `).get(txnId) as { balance: number; status: string; cover_issued: number; guest_id: string } | undefined;
-
-  if (!wallet) return false;
-  if (wallet.status !== 'active') return false;
-
-  const balanceBefore = wallet.balance;
-
-  db.prepare(`
-    UPDATE wallets
-    SET balance = 0, status = 'exhausted', pin_fail_count = 0, pin_locked_until = NULL
-    WHERE txn_id = ?
-  `).run(txnId);
-
-  logAudit({
-    actor,
-    action: 'wallet_void',
-    entityType: 'wallet',
-    entityId: txnId,
-    details: {
-      balance_before: balanceBefore,
-      balance_after: 0,
-      cover_issued: wallet.cover_issued,
-      refund_amount: opts.refundAmount ?? balanceBefore,
-      reason: opts.reason ?? null,
-    },
-  });
-
-  return true;
+  return db.transaction(() => {
+    const wallet = db.prepare('SELECT balance, status, cover_issued FROM wallets WHERE txn_id = ?')
+      .get(txnId) as { balance: number; status: string; cover_issued: number } | undefined;
+    if (!wallet || wallet.status !== 'active') return false;
+    db.prepare(`UPDATE wallets SET balance = 0, status = 'exhausted', pin_fail_count = 0,
+      pin_locked_until = NULL WHERE txn_id = ?`).run(txnId);
+    logAudit({ actor, action: 'wallet_void', entityType: 'wallet', entityId: txnId,
+      details: { balance_before: wallet.balance, balance_after: 0, cover_issued: wallet.cover_issued,
+        refund_amount: 0, money_returned: false, reason: opts.reason ?? null } });
+    return true;
+  }).immediate();
 }
 
 export function lookupWallet(txnId: string): WalletWithGuest | null {

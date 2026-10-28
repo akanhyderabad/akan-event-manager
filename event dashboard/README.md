@@ -5,9 +5,12 @@ The backend half of the Akan Events workspace, using Next.js 15.0.3 and SQLite (
 Read the root [AGENTS.md](../AGENTS.md), [developer guide](../DEVELOPER_GUIDE.md), and [deployment runbook](../VPS_DEPLOYMENT_RUNBOOK.md).
 
 ```sh
-npm ci
+npm ci --legacy-peer-deps
 npm run dev -- -p 3001
 ```
+
+The compatibility flag preserves the lockfile's React prerelease while allowing
+Tiptap's stable React peer range. Do not use it as a reason to upgrade dependencies.
 
 Use test configuration in an untracked `.env.local` and a disposable local DB. The app auto-creates `data/eventcover.db` relative to its working directory. Integration settings may also be stored in the DB config table. Never delete production data to reset a demo.
 

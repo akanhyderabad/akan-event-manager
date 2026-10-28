@@ -16,7 +16,7 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const VALID_METHODS: PaymentMethod[] = ['cash', 'upi', 'card', 'online', 'comp'];
+const VALID_METHODS: PaymentMethod[] = ['cash', 'upi', 'card', 'online', 'razorpay', 'comp'];
 
 export async function GET() {
   try {
@@ -110,6 +110,7 @@ export async function POST(req: NextRequest) {
       captainUrl,
       qrDataUrl,
       whatsappQueued,
+      whatsappFormat: getConfig('WALLET_PASS_FORMAT', 'image') === 'pdf' ? 'pdf' : 'image',
     });
   } catch (err) {
     return NextResponse.json({ ok: false, message: errMsg(err) }, { status: 500 });

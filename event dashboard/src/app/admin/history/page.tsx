@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-type TxnKind = 'entry' | 'redemption';
-type TxnStatus = 'Active' | 'Exhausted' | 'Expired' | 'Voided' | 'Pending' | 'Settled' | 'Reversed';
+type TxnKind = 'entry' | 'redemption' | 'refund';
+type TxnStatus = 'Active' | 'Exhausted' | 'Expired' | 'Voided' | 'Pending' | 'Settled' | 'Reversed' | 'Refunded';
 
 interface TransactionRow {
   id: string;
@@ -34,6 +34,8 @@ interface Totals {
   pending_amount: number;
   voided_count: number;
   reversed_count: number;
+  refunds_count: number;
+  refunds_amount: number;
 }
 
 interface ApiResponse {
@@ -61,7 +63,7 @@ function fromDateInput(s: string, endOfDay = false): number {
   return new Date(y, (m || 1) - 1, d || 1, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0, endOfDay ? 999 : 0).getTime();
 }
 function fmtINR(n: number): string {
-  return `₹${(n ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+  return `₹${(n ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
 function fmtDateTime(ms: number): string {
   return new Date(ms).toLocaleString('en-IN', {
@@ -75,6 +77,7 @@ const STATUS_PILL: Record<TxnStatus, string> = {
   Active:    'bg-sky-50      text-sky-700      border-sky-200',
   Exhausted: 'bg-slate-50    text-slate-600    border-slate-200',
   Expired:   'bg-amber-50    text-amber-700    border-amber-200',
+  Refunded: 'bg-rose-50 text-rose-700 border-rose-200',
   Voided:    'bg-rose-50     text-rose-700     border-rose-200',
   Pending:   'bg-amber-50    text-amber-700    border-amber-200',
   Settled:   'bg-emerald-50  text-emerald-700  border-emerald-200',
@@ -137,7 +140,7 @@ export default function HistoryPage() {
   const criticalCount = (totals?.voided_count ?? 0) + (totals?.reversed_count ?? 0);
 
   async function voidWallet(txnId: string) {
-    if (!confirm('Void this cover? This refunds the customer and cannot be undone.')) return;
+    if (!confirm('Void this cover? This removes the remaining cover balance without returning money. Use Issue Cover → Refunds to record a refund.')) return;
     setBusyId(txnId);
     try {
       const res = await fetch(`/api/wallets/${encodeURIComponent(txnId)}`, {
@@ -236,7 +239,8 @@ export default function HistoryPage() {
 
       {/* KPI strip */}
       {totals && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 mt-4">
+          <Kpi label="Refunded" value={fmtINR(totals.refunds_amount)} sub={`${totals.refunds_count} refunds recorded`} />
           <Kpi label="Entries"           value={fmtINR(totals.entries_amount)}      sub={`${totals.entries_count} txn`} />
           <Kpi label="Redemptions"       value={fmtINR(totals.redemptions_amount)}  sub={`${totals.redemptions_count} txn`} />
           <Kpi label="Settled"           value={fmtINR(totals.settled_amount)} />
@@ -290,7 +294,7 @@ export default function HistoryPage() {
           <div>
             <label className="label">Type</label>
             <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 h-[42px]">
-              {(['all', 'entry', 'redemption'] as const).map((k) => (
+              {(['all', 'entry', 'redemption', 'refund'] as const).map((k) => (
                 <button
                   key={k}
                   type="button"
@@ -299,7 +303,7 @@ export default function HistoryPage() {
                     kind === k ? 'bg-white text-slate-900 shadow' : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  {k === 'all' ? 'All' : k === 'entry' ? 'Entries' : 'Redeems'}
+                  {k === 'all' ? 'All' : k === 'entry' ? 'Entries' : k === 'refund' ? 'Refunds' : 'Redeems'}
                 </button>
               ))}
             </div>

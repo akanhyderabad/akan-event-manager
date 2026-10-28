@@ -1,4 +1,4 @@
-export type PaymentMethod = 'cash' | 'upi' | 'card' | 'online' | 'comp';
+export type PaymentMethod = 'cash' | 'upi' | 'card' | 'online' | 'razorpay' | 'comp';
 export type WalletStatus = 'active' | 'exhausted' | 'expired' | 'revoked' | 'flagged';
 export const ALL_WALLET_STATUSES: WalletStatus[] = ['active', 'exhausted', 'expired', 'revoked', 'flagged'];
 

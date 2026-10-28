@@ -28,18 +28,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ txnId: string 
   });
 }
 
-/**
- * Void / refund a wallet.
- *
- * Body: { reason?: string; refundAmount?: number }
- *
- * Forces balance to 0 and marks the wallet exhausted. Always lands as a
- * critical `wallet_void` row in the audit log so an admin or cashier reviewing
- * History sees the reversal at a glance.
- *
- * Strictly host-only: reversing real money is an admin-only action. Manager,
- * cashier, captain and entry roles cannot void a wallet.
- */
+/** Disable a wallet without issuing or recording a refund. Admin-only. */
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ txnId: string }> }) {
   const session = await requireRole(['host']);
   if ('forbidden' in session) {
@@ -49,10 +38,12 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ txnId: s
   const { txnId } = await ctx.params;
   const body = await req.json().catch(() => ({}));
   const reason = typeof body?.reason === 'string' ? body.reason.trim() : undefined;
-  const refundAmount =
-    typeof body?.refundAmount === 'number' && Number.isFinite(body.refundAmount) && body.refundAmount >= 0
-      ? body.refundAmount
-      : undefined;
+  if (session.role !== 'host') {
+    return NextResponse.json({ ok: false, message: 'Only an admin can void wallets.' }, { status: 403 });
+  }
+  if (body?.refundAmount != null) {
+    return NextResponse.json({ ok: false, message: 'Use Issue Cover → Refunds to record money returned to the guest.' }, { status: 400 });
+  }
 
   const wallet = lookupWallet(txnId);
   if (!wallet) {
@@ -65,7 +56,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ txnId: s
     );
   }
 
-  const changed = voidWallet(txnId, session.name, { reason, refundAmount });
+  const changed = voidWallet(txnId, session.name, { reason });
   if (!changed) {
     return NextResponse.json(
       { ok: false, message: 'Wallet could not be voided.' },
