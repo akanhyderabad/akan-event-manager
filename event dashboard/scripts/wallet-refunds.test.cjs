@@ -45,6 +45,7 @@ function fixture(t) {
     return module.exports;
   }
   load('lib/wallet-refund-schema.ts').initWalletRefundSchema(db);
+  load('lib/wallet-qr-codes.ts').initWalletQrCodeSchema(db);
   const wallet = (id = 'wallet', { event = 'a', cover = 1000, balance = cover, status = 'active', method = 'cash', expiry = Date.now() + 86400000 } = {}) => {
     db.prepare(`INSERT INTO wallets VALUES (?, 'guest', ?, 100, ?, ?, ?, ?, ?, 'Door Staff', ?, 'hash', 0, NULL)`)
       .run(id, event, cover, balance, status, method, Date.now(), expiry);
@@ -63,6 +64,23 @@ test('additive migration is repeatable, preserves existing wallets and does not 
   f.load('lib/wallet-refund-schema.ts').initWalletRefundSchema(f.db);
   assert.equal(f.snapshot().balance, 1000);
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM wallet_refunds').get().n, 0);
+});
+
+test('five-digit cover references find the correct wallet and refund history within the selected event', (t) => {
+  const f = fixture(t); f.wallet(); f.wallet('other', { event: 'b' });
+  const codes = f.load('lib/wallet-qr-codes.ts');
+  const code = codes.ensureWalletQrCode(f.db, 'wallet');
+  const refund = f.refund();
+  assert.equal(refund.qrCodeId, code);
+  const list = f.load('lib/wallet-refunds.ts').getEventRefunds;
+  const results = list('a', code, 0);
+  assert.equal(results.wallets.length, 1);
+  assert.equal(results.wallets[0].txnId, 'wallet');
+  assert.equal(results.wallets[0].qrCodeId, code);
+  assert.equal(results.refundCount, 1);
+  assert.equal(results.refunds[0].id, refund.id);
+  assert.equal(list('b', code, 0).wallets.length, 0);
+  assert.equal(list('b', code, 0).refundCount, 0);
 });
 
 test('partial and full refunds atomically reduce spendable cover, preserve receipts and retain staff evidence', (t) => {

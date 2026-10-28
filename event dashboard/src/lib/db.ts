@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { nanoid } from 'nanoid';
 import { defaultEventDate } from './expiry';
 import { initWalletRefundSchema } from './wallet-refund-schema';
+import { initWalletQrCodeSchema } from './wallet-qr-codes';
 
 const DB_DIR = path.join(process.cwd(), 'data');
 const DB_PATH = path.join(DB_DIR, 'eventcover.db');
@@ -432,6 +433,7 @@ function migrate(db: Database.Database) {
     db.exec('ALTER TABLE wallets ADD COLUMN reservation_id TEXT');
   }
   initWalletRefundSchema(db);
+  initWalletQrCodeSchema(db);
 
   // Events wizard columns — additive so legacy event rows keep working.
   const eventCols = db.prepare('PRAGMA table_info(events)').all() as { name: string }[];

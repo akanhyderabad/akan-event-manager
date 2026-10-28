@@ -28,7 +28,7 @@
  */
 
 import { getConfig } from '@/lib/db';
-import { lookupWallet } from '@/lib/wallet';
+import { lookupWallet, getWalletQrCode } from '@/lib/wallet';
 import { getEvent } from '@/lib/events';
 import { signWalletPassToken, signWalletViewToken, signWalletVoucherToken } from '@/lib/signed-url';
 import { sendInteraktTemplate, splitPhone, isInteraktConfigured } from '@/lib/providers/whatsapp/interakt';
@@ -50,7 +50,7 @@ export interface SendPassInput {
   /** Origin base URL (e.g. "https://wallet.akanhyd.com"). Required since we
    *  can't introspect from a fire-and-forget helper. */
   origin: string;
-  /** Human-readable 4-digit code shown under the QR in the pass image. */
+  /** Legacy caller field; displayed references are always resolved from storage. */
   qrCodeId?: string;
   /** Who triggered this (for audit). Default: 'system'. */
   actor?: string;
@@ -138,9 +138,10 @@ export async function sendWalletPassWhatsApp(input: SendPassInput): Promise<Send
     return { ok: false, error: 'This template includes a wallet link and needs a public HTTPS website. For local PDF testing, use the approved cover_issued template.' };
   }
 
+  const qrCodeId = getWalletQrCode(wallet.txn_id);
   const token = format === 'pdf'
     ? signWalletVoucherToken({ txnId: input.txnId })
-    : signWalletPassToken({ txnId: input.txnId, qrCodeId: input.qrCodeId });
+    : signWalletPassToken({ txnId: input.txnId, qrCodeId });
   const passUrl = `${mediaOrigin}/api/public/${format === 'pdf' ? 'wallet-voucher' : 'wallet-pass'}/${token}`;
 
   // Optionally mint a wallet-view URL for the 3rd body variable. Feature
@@ -162,11 +163,11 @@ export async function sendWalletPassWhatsApp(input: SendPassInput): Promise<Send
   const templateName = format === 'pdf' ? pdfTemplate : getConfig('WALLET_PASS_TEMPLATE', 'akan_cover_pass').trim() || 'akan_cover_pass';
   const languageCode = getConfig(format === 'pdf' ? 'WALLET_VOUCHER_TEMPLATE_LANG' : 'WALLET_PASS_TEMPLATE_LANG', 'en').trim() || 'en';
 
-  // Use the same ID as the attached PDF's QR, never a client-supplied display ID.
+  // Same permanent reference as the PDF caption; QR payloads retain the canonical ID.
   const bodyValues = isCoverIssuedTemplate
     ? [wallet.name || 'Guest',
       wallet.cover_issued.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-      input.txnId,
+      qrCodeId,
       `${new Date(wallet.expires_at!).toLocaleString('en-IN', {
         timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric',
         hour: '2-digit', minute: '2-digit', hour12: true,
@@ -174,7 +175,7 @@ export async function sendWalletPassWhatsApp(input: SendPassInput): Promise<Send
     : format === 'pdf'
     ? [wallet.name || 'Guest', getConfig('VENUE_NAME', 'Akan Hyderabad'),
       wallet.cover_issued.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-      input.txnId, walletUrl!]
+      qrCodeId, walletUrl!]
     : walletUrl
     ? [wallet.name || 'Guest', eventName, walletUrl]
     : [wallet.name || 'Guest', eventName];

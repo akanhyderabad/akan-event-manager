@@ -147,9 +147,38 @@ approved **Document** header template (`WALLET_VOUCHER_TEMPLATE`, language in
 `WALLET_VOUCHER_TEMPLATE_LANG`, default `en`). Akan's existing approved utility
 template is `cover_issued` (English `en`), verified in Interakt on 2026-10-28. It
 has a Document header, no buttons and four body variables: customer name, cover
-amount in INR (excluding entry fees), QR/transaction ID, expiry formatted in IST.
-The ID matches the attached PDF's QR. Missing expiry blocks this template;
+amount in INR (excluding entry fees), five-digit cover ID, expiry formatted in IST.
+The ID matches the attached PDF's caption. Missing expiry blocks this template;
 client-supplied display IDs are not used. Its approved text has no wallet link.
+
+#### Five-digit cover IDs
+
+Each wallet receives a permanent numeric reference from `10000` to `99999`.
+`wallet_qr_codes` maps an AUTOINCREMENT ID to the unchanged wallet `txn_id`;
+`db.ts` creates this table additively. New wallets allocate the reference inside
+the same immediate transaction as the guest and wallet inserts. Existing wallets
+receive one lazily when a new pass, WhatsApp send or staff lookup needs it.
+There is no bulk rewrite of old records and no truncation/hash collision risk.
+
+The WhatsApp PDF message, PDF caption, image pass, Issue Cover result and staff
+redemption view use the stored reference. Refund search/history also supports it.
+**Redeem Cover** accepts the short reference or the older full ID, resolves to the
+canonical wallet, then performs the existing PIN, lockout and balance checks.
+Wallet lookup requires an authenticated staff role and disables public caching.
+The QR payload, signed voucher/view links, payment receipts and audit references
+keep their original transaction IDs, so previously issued passes keep working.
+The short code is not an authorization token and is never derived from the PIN.
+Download/send endpoints ignore legacy caller-supplied display codes/PINs.
+
+Numbers are never reused (including expired/voided wallets). This provides 90,000
+references; the allocator explicitly refuses new allocations at exhaustion and
+rolls back new wallet/guest inserts instead of issuing duplicates or six digits.
+Already assigned codes still work. Review capacity before approaching this limit.
+Back up the persistent DB before release. A code rollback can leave the mapping
+table in place and all money records intact, but older code cannot look up the
+new short references; prefer a forward fix once new vouchers are distributed.
+Tests: `node --test scripts/wallet-qr-codes.test.cjs scripts/wallet-voucher.test.cjs
+scripts/wallet-refunds.test.cjs` (disposable SQLite and simulated delivery).
 
 Other document template names retain the five-variable contract: customer name,
 venue name, cover amount in INR, cover ID, signed wallet balance/top-up URL.

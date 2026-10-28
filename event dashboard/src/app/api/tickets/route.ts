@@ -185,7 +185,7 @@ export async function POST(req: NextRequest) {
         sendWalletPassWhatsApp({
           txnId: result.txnId,
           origin,
-          qrCodeId: result.pin.slice(-4),
+          qrCodeId: result.qrCodeId,
           actor: session.name,
         }).catch(() => { /* never block ticket create */ });
       }

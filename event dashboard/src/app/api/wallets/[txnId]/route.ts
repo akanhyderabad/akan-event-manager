@@ -1,20 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { lookupWallet, voidWallet } from '@/lib/wallet';
+import { lookupWallet, lookupWalletByReference, getWalletQrCode, voidWallet } from '@/lib/wallet';
 import { requireRole } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(_req: Request, ctx: { params: Promise<{ txnId: string }> }) {
+  const session = await requireRole(['host', 'manager', 'entry', 'captain', 'cashier']);
+  const headers = { 'Cache-Control': 'private, no-store' };
+  if ('forbidden' in session) {
+    return NextResponse.json({ ok: false, message: session.message }, { status: session.status, headers });
+  }
   const { txnId } = await ctx.params;
-  const wallet = lookupWallet(txnId);
+  const wallet = lookupWalletByReference(txnId);
   if (!wallet) {
-    return NextResponse.json({ ok: false, message: 'Transaction not found.' }, { status: 404 });
+    return NextResponse.json({ ok: false, message: 'Wallet not found.' }, { status: 404, headers });
   }
   return NextResponse.json({
     ok: true,
     wallet: {
       txnId: wallet.txn_id,
+      qrCodeId: getWalletQrCode(wallet.txn_id),
       guestName: wallet.name,
       guestPhone: wallet.phone,
       balance: wallet.balance,
@@ -25,7 +31,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ txnId: string 
       issuedAt: wallet.issued_at,
       expiresAt: wallet.expires_at,
     },
-  });
+  }, { headers });
 }
 
 /** Disable a wallet without issuing or recording a refund. Admin-only. */

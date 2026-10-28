@@ -14,10 +14,11 @@ const root = path.resolve(__dirname, '../src');
 function fixture(overrides = {}) {
   const config = new Map(Object.entries({ INTERAKT_API_SECRET: 'test-secret', WALLET_VOUCHER_TEMPLATE: 'test_voucher', VENUE_NAME: 'AKAN Hyderabad', ...overrides }));
   const wallet = { txn_id: 'TEST-COVER-001', name: 'Voucher Test Guest', phone: '+12025550100', cover_issued: 5000.5, entry_fee: 500, balance: 5000.5, status: 'active', expires_at: Date.now() + 86400000, event_id: 'test-event' };
-  const state = { config, wallet, requests: [], audits: [], logs: [], role: 'host', response: { id: 'test-message', result: true }, status: 200, env: {}, networkError: false };
+  const state = { config, wallet, requests: [], pdfInputs: [], audits: [], logs: [], role: 'host', response: { id: 'test-message', result: true }, status: 200, env: {}, networkError: false };
   const stubs = {
     'lib/db.ts': { getConfig: (key, fallback = '') => config.get(key) ?? fallback, setConfig: (key, value) => config.set(key, value), getAllConfig: () => Object.fromEntries(config) },
-    'lib/wallet.ts': { lookupWallet: (id) => id === wallet.txn_id ? wallet : null },
+    'lib/wallet.ts': { lookupWallet: (id) => id === wallet.txn_id ? wallet : null,
+      getWalletQrCode: (id) => { assert.equal(id, wallet.txn_id); return '12345'; } },
     'lib/events.ts': { getEvent: () => ({ name: 'Local Demo Event' }) },
     'lib/audit.ts': { logAudit: (entry) => state.audits.push(entry) },
     'lib/auth.ts': { requireRole: async (roles) => roles.includes(state.role) ? { name: 'Test Staff', role: state.role } : { forbidden: true, status: state.role ? 403 : 401, message: 'Not authorized' } },
@@ -41,6 +42,10 @@ function fixture(overrides = {}) {
       },
     };
     vm.compileFunction(code, Object.keys(context), { filename })(...Object.values(context));
+    if (key === 'lib/pdf/pass.ts') {
+      const generate = module.exports.generatePassPdf;
+      module.exports.generatePassPdf = (input) => { state.pdfInputs.push(input); return generate(input); };
+    }
     return module.exports;
   }
   return { ...state, state, load, send: (input = {}) => load('lib/whatsapp/wallet-pass-send.ts').sendWalletPassWhatsApp({ txnId: wallet.txn_id, origin: 'https://venue.example', format: 'pdf', force: true, ...input }) };
@@ -57,7 +62,7 @@ test('PDF uses document header, correct recipient, original cover only, and sign
   assert.equal(body.countryCode, '+1');
   assert.equal(body.phoneNumber, '2025550100');
   assert.equal(body.template.fileName, 'Cover Voucher Issue.pdf');
-  assert.deepEqual(Array.from(body.template.bodyValues.slice(0, 4)), ['Voucher Test Guest', 'AKAN Hyderabad', '5,000.50', 'TEST-COVER-001']);
+  assert.deepEqual(Array.from(body.template.bodyValues.slice(0, 4)), ['Voucher Test Guest', 'AKAN Hyderabad', '5,000.50', '12345']);
   const signing = f.load('lib/signed-url.ts');
   assert.equal(signing.verifyWalletViewToken(body.template.bodyValues[4].split('/').pop()).txnId, f.wallet.txn_id);
   assert.equal(signing.verifyWalletVoucherToken(body.template.headerValues[0].split('/').pop()).txnId, f.wallet.txn_id);
@@ -76,8 +81,20 @@ test('PDF route renders the signed attachment and disallows public caching', asy
   assert.equal(response.headers.get('cache-control'), 'private, no-store');
   const bytes = Buffer.from(await response.arrayBuffer());
   assert.equal((await PDFDocument.load(bytes)).getPageCount(), 1);
+  assert.equal(f.pdfInputs[0].qrCodeId, '12345');
+  assert.equal(f.pdfInputs[0].txnId, f.wallet.txn_id, 'scanned QR keeps the canonical wallet ID');
+  assert.equal(f.pdfInputs[0].qrCodeId, f.requests[0].body.template.bodyValues[3]);
   assert.equal(f.logs.length, 0, 'PDF must not overflow');
   if (process.env.VOUCHER_SAMPLE_PATH) fs.writeFileSync(process.env.VOUCHER_SAMPLE_PATH, bytes);
+});
+
+test('staff PDF download ignores supplied PIN/display IDs and uses the stored code', async () => {
+  const f = fixture();
+  const route = f.load('app/api/wallets/[txnId]/pass/route.ts');
+  const response = await route.POST({ json: async () => ({ qrCodeId: '654321' }) }, { params: Promise.resolve({ txnId: f.wallet.txn_id }) });
+  assert.equal(response.status, 200);
+  assert.equal(f.pdfInputs[0].qrCodeId, '12345');
+  assert.equal(f.pdfInputs[0].txnId, f.wallet.txn_id);
 });
 
 test('approved cover_issued uses four variables and the PDF QR ID with an IST expiry', async () => {
@@ -87,7 +104,7 @@ test('approved cover_issued uses four variables and the PDF QR ID with an IST ex
   const template = f.requests[0].body.template;
   assert.equal(template.name, 'cover_issued');
   assert.equal(template.languageCode, 'en');
-  assert.deepEqual(Array.from(template.bodyValues), ['Voucher Test Guest', '5,000.50', 'TEST-COVER-001', '04 Nov 2099, 02:00 am IST']);
+  assert.deepEqual(Array.from(template.bodyValues), ['Voucher Test Guest', '5,000.50', '12345', '04 Nov 2099, 02:00 am IST']);
   assert.equal(template.fileName, 'Cover Voucher Issue.pdf');
   assert.equal(f.audits[0].details.view_url_minted, false);
   for (const expiry of [null, NaN]) {

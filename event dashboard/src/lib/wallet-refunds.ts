@@ -10,7 +10,8 @@ export class RefundError extends Error {
   constructor(message: string, public status = 400) { super(message); }
 }
 
-const refundSelect = `SELECT r.id, r.txn_id AS txnId, g.name AS guestName, g.phone AS guestPhone,
+const qrCodeSql = `(SELECT CAST(c.id + 9999 AS TEXT) FROM wallet_qr_codes c WHERE c.txn_id = w.txn_id)`;
+const refundSelect = `SELECT r.id, r.txn_id AS txnId, ${qrCodeSql} AS qrCodeId, g.name AS guestName, g.phone AS guestPhone,
   r.amount_paise / 100.0 AS amount, r.method, r.reason, r.reference,
   r.recorded_by AS recordedBy, r.created_at AS createdAt,
   r.balance_after_paise / 100.0 AS balanceAfter
@@ -19,7 +20,7 @@ const refundSelect = `SELECT r.id, r.txn_id AS txnId, g.name AS guestName, g.pho
 
 function walletQuery(scope: 'event' | 'wallet') {
   return `${issueReceiptsCte(scope)}
-    SELECT w.txn_id AS txnId, g.name AS guestName, g.phone AS guestPhone,
+    SELECT w.txn_id AS txnId, ${qrCodeSql} AS qrCodeId, g.name AS guestName, g.phone AS guestPhone,
       w.status, w.balance, issued.cover AS issuedCover,
       COALESCE((SELECT SUM(amount_paise) FROM wallet_refunds WHERE txn_id = w.txn_id), 0) / 100.0 AS refunded
     FROM issued JOIN wallets w ON w.txn_id = issued.txn_id
@@ -37,8 +38,8 @@ function withAvailable(row: Omit<RefundWallet, 'refundable'>): RefundWallet {
 export function getEventRefunds(eventId: string, query: string, offset: number) {
   const db = getDb();
   const search = query.trim().toLowerCase();
-  const predicate = `(? = '' OR instr(lower(g.name), ?) > 0 OR instr(g.phone, ?) > 0 OR instr(lower(w.txn_id), ?) > 0)`;
-  const terms = [search, search, search, search];
+  const predicate = `(? = '' OR instr(lower(g.name), ?) > 0 OR instr(g.phone, ?) > 0 OR instr(lower(w.txn_id), ?) > 0 OR ${qrCodeSql} = ?)`;
+  const terms = [search, search, search, search, search];
   const wallets = (db.prepare(`${walletQuery('event')}
     WHERE ${predicate} ORDER BY w.issued_at DESC, w.txn_id LIMIT 20
   `).all(eventId, ...terms) as Omit<RefundWallet, 'refundable'>[]).map(withAvailable);

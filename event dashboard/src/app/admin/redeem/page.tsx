@@ -7,6 +7,7 @@ import { QrScanner } from '@/components/QrScanner';
 
 interface WalletView {
   txnId: string;
+  qrCodeId: string;
   guestName: string;
   guestPhone?: string;
   balance: number;
@@ -90,7 +91,7 @@ function RedeemClient() {
   function submitLookup(e: React.FormEvent) {
     e.preventDefault();
     const t = lookupInput.trim().toUpperCase();
-    if (!t) { setError('Enter a transaction ID.'); return; }
+    if (!t) { setError('Enter a cover ID.'); return; }
     router.replace(`/admin/redeem?t=${encodeURIComponent(t)}`);
     loadWallet(t);
   }
@@ -174,16 +175,17 @@ function RedeemClient() {
           <form onSubmit={submitLookup} className="card space-y-4">
             {error && <ErrorBox>{error}</ErrorBox>}
             <div>
-              <label className="label">Transaction ID</label>
+              <label htmlFor="cover-lookup" className="label">Cover ID</label>
               <input
+                id="cover-lookup"
                 className="input font-mono uppercase"
                 value={lookupInput}
                 onChange={(e) => setLookupInput(e.target.value.toUpperCase())}
-                placeholder="e.g. SKY-0516-C21UE"
+                placeholder="e.g. 10001"
                 autoComplete="off"
               />
               <div className="text-xs text-slate-500 mt-2">
-                Manual fallback if the guest's phone screen is cracked or unreadable.
+                Enter the five-digit ID from the voucher. Older full IDs still work.
               </div>
             </div>
             <button className="btn btn-secondary w-full" disabled={loadingWallet}>
@@ -224,7 +226,7 @@ function RedeemClient() {
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-slate-900 truncate">{wallet.guestName}</div>
-                <div className="text-xs text-slate-500 font-mono truncate">{wallet.txnId}</div>
+                <div className="text-xs text-slate-500 font-mono truncate">Cover ID: {wallet.qrCodeId || wallet.txnId}</div>
                 {wallet.guestPhone && (
                   <div className="text-xs text-slate-500 font-mono mt-0.5">+91 {wallet.guestPhone.replace(/^\+?91/, '')}</div>
                 )}

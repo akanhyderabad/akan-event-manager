@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyWalletVoucherToken } from '@/lib/signed-url';
-import { lookupWallet } from '@/lib/wallet';
+import { lookupWallet, getWalletQrCode } from '@/lib/wallet';
 import { getConfig } from '@/lib/db';
 import { getEvent } from '@/lib/events';
 import { generatePassPdf } from '@/lib/pdf/pass';
@@ -23,6 +23,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ token: str
   const event = eventId ? getEvent(eventId) : null;
   const pdf = await generatePassPdf({
     txnId: wallet.txn_id,
+    qrCodeId: getWalletQrCode(wallet.txn_id),
     guestName: wallet.name || 'Guest',
     coverAmount: wallet.cover_issued,
     eventName: event?.name || getConfig('EVENT_NAME', ''),

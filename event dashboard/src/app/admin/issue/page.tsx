@@ -15,6 +15,7 @@ type PaymentMethod = CollectionMethod;
 
 interface IssueResult {
   txnId: string;
+  qrCodeId: string;
   pin: string;
   balance: number;
   captainUrl: string;
@@ -427,7 +428,7 @@ function IssueClient() {
             ✓ Wallet issued
           </div>
           <div className="mt-4 text-xl font-semibold text-slate-900">{result.guestName}</div>
-          <div className="font-mono text-slate-400 text-sm mt-1">{result.txnId}</div>
+          <div className="font-mono text-slate-500 text-sm mt-1">Cover ID: {result.qrCodeId || result.txnId}</div>
           {result.expiresAtLabel && (
             <div className="text-xs text-amber-700 mt-2">
               Valid until <b>{result.expiresAtLabel}</b>
@@ -464,7 +465,7 @@ function IssueClient() {
                 // Browser-fetch the image, then open it in a new tab so the
                 // operator can long-press → Save / Share.
                 try {
-                  const url = `/api/wallets/${encodeURIComponent(result.txnId)}/image?qrCodeId=${encodeURIComponent(result.pin)}`;
+                  const url = `/api/wallets/${encodeURIComponent(result.txnId)}/image`;
                   const res = await fetch(url);
                   if (!res.ok) {
                     const err = await res.json().catch(() => ({ message: 'Failed' }));
@@ -494,7 +495,6 @@ function IssueClient() {
                   const res = await fetch(`/api/wallets/${encodeURIComponent(result.txnId)}/pass`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ qrCodeId: result.pin }),
                   });
                   if (!res.ok) {
                     const err = await res.json().catch(() => ({ message: 'Failed' }));

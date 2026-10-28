@@ -3,6 +3,7 @@ import type { CollectionMethod } from './collection-types';
 export interface RefundRecord {
   id: string;
   txnId: string;
+  qrCodeId: string | null;
   guestName: string;
   guestPhone: string;
   amount: number;
@@ -16,6 +17,7 @@ export interface RefundRecord {
 
 export interface RefundWallet {
   txnId: string;
+  qrCodeId: string | null;
   guestName: string;
   guestPhone: string;
   status: string;

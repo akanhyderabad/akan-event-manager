@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     const captainUrl = `${origin}/admin/redeem?t=${encodeURIComponent(result.txnId)}`;
     const qrDataUrl = await QRCode.toDataURL(captainUrl, { width: 360, margin: 2 });
 
-    // Fire-and-forget WhatsApp send of the PNG pass. Never blocks the door
+    // Fire-and-forget WhatsApp send of the configured pass. Never blocks the door
     // staff's response — they get their PIN + QR immediately, the customer
     // receives WhatsApp seconds later in parallel. Toggle gated by config
     // (AUTO_SEND_WHATSAPP_PASS = '1' to enable).
@@ -93,9 +93,7 @@ export async function POST(req: NextRequest) {
       sendWalletPassWhatsApp({
         txnId: result.txnId,
         origin,
-        // Use the 4-digit short code derived from the PIN (matches what the
-        // door staff sees on screen + the QR caption in the PNG)
-        qrCodeId: result.pin.slice(-4),
+        qrCodeId: result.qrCodeId,
         actor: session.name,
       }).catch(() => { /* logged via audit; never block this request */ });
     }
@@ -103,6 +101,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       txnId: result.txnId,
+      qrCodeId: result.qrCodeId,
       pin: result.pin,
       balance: result.balance,
       expiresAt: result.expiresAt,

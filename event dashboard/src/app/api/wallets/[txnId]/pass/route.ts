@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth';
-import { lookupWallet } from '@/lib/wallet';
+import { lookupWallet, getWalletQrCode } from '@/lib/wallet';
 import { generatePassPdf } from '@/lib/pdf/pass';
 import { getConfig } from '@/lib/db';
 import { getEvent } from '@/lib/events';
@@ -12,15 +12,10 @@ export const dynamic = 'force-dynamic';
 /**
  * Generate the A6 cover-pass PDF for a wallet.
  *
- * The wallet's plaintext PIN is only
- * available at issue time — the DB stores only the bcrypt hash. So the
- * caller must pass it in the body.
+ * The displayed cover ID is resolved from storage. No plaintext PIN is needed.
  *
  * Access:
  *   • host / manager / entry — they're the ones who hand passes to guests
- *
- * Body:
- *   { qrCodeId: string }       — required, the guest PIN shown at issue time
  *
  * Returns: application/pdf binary stream
  */
@@ -31,13 +26,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ txnId: str
   }
 
   const { txnId } = await ctx.params;
-  const body = await req.json().catch(() => ({}));
-  const qrCodeId = String(body?.qrCodeId || '').trim();
-
-  if (!/^\d{4,8}$/.test(qrCodeId)) {
-    return NextResponse.json({ ok: false, message: 'PIN must be 4-8 digits.' }, { status: 400 });
-  }
-
   const wallet = lookupWallet(txnId);
   if (!wallet) {
     return NextResponse.json({ ok: false, message: 'Wallet not found.' }, { status: 404 });
@@ -60,7 +48,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ txnId: str
 
   const pdfBytes = await generatePassPdf({
     txnId,
-    qrCodeId,
+    qrCodeId: getWalletQrCode(wallet.txn_id),
     guestName: wallet.name || 'Guest',
     coverAmount: wallet.cover_issued,
     eventName,

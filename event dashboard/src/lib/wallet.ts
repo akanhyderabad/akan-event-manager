@@ -7,6 +7,7 @@ import { attachWalletToTable } from './tables';
 import { getEvent } from './events';
 import { markReservationConverted } from './reservations';
 import type { WalletWithGuest, PaymentMethod } from './types';
+import { ensureWalletQrCode, resolveWalletQrCode } from './wallet-qr-codes';
 import {
   isValidNonNegativeMoney,
   MAX_WALLET_AMOUNT_INR,
@@ -29,6 +30,7 @@ export interface IssueWalletInput {
 
 export interface IssueWalletResult {
   txnId: string;
+  qrCodeId: string;
   pin: string;
   guestId: string;
   balance: number;
@@ -95,8 +97,9 @@ export async function issueWallet(input: IssueWalletInput): Promise<IssueWalletR
       input.eventId || null,
       input.reservationId || null,
     );
+    return ensureWalletQrCode(db, txnId);
   });
-  tx();
+  const qrCodeId = tx.immediate();
 
   if (input.tableId) {
     try { attachWalletToTable(input.tableId, txnId); } catch { /* table missing — ignore */ }
@@ -118,7 +121,16 @@ export async function issueWallet(input: IssueWalletInput): Promise<IssueWalletR
     },
   });
 
-  return { txnId, pin, guestId, balance: coverIssued, expiresAt };
+  return { txnId, qrCodeId, pin, guestId, balance: coverIssued, expiresAt };
+}
+
+export function getWalletQrCode(txnId: string): string {
+  return ensureWalletQrCode(getDb(), txnId);
+}
+
+/** Staff-only lookup by printed code; canonical lookup stays separate for tokens. */
+export function lookupWalletByReference(reference: string): WalletWithGuest | null {
+  return lookupWallet(resolveWalletQrCode(getDb(), reference.trim().toUpperCase()));
 }
 
 /**

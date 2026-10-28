@@ -104,7 +104,7 @@ export function EventRefundsPanel({ eventId, refreshKey, onRecorded }: {
                     <div key={wallet.txnId} className="rounded-xl border border-slate-200 p-3 flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
                         <div className="font-medium text-sm text-slate-900">{wallet.guestName}</div>
-                        <div className="text-xs text-slate-500 break-all">{wallet.guestPhone} · {wallet.txnId}</div>
+                        <div className="text-xs text-slate-500 break-all">{wallet.guestPhone} · Cover ID: {wallet.qrCodeId || wallet.txnId}</div>
                         <div className="text-xs text-slate-500 mt-1">Available to refund {formatMoney(wallet.refundable)} · Already refunded {formatMoney(wallet.refunded)}</div>
                       </div>
                       <button type="button" className="btn btn-secondary text-xs" disabled={wallet.refundable <= 0} onClick={() => choose(wallet)}>Record refund</button>
@@ -115,7 +115,7 @@ export function EventRefundsPanel({ eventId, refreshKey, onRecorded }: {
               {data.canRecord && selected && (
                 <form onSubmit={record} className="rounded-xl border border-rose-200 bg-rose-50/40 p-4 space-y-3">
                   <div className="text-sm font-semibold">Refund for {selected.guestName}</div>
-                  <p className="text-xs text-slate-600">{selected.guestPhone} · {selected.txnId}<br />Available to refund: {formatMoney(selected.refundable)}</p>
+                  <p className="text-xs text-slate-600">{selected.guestPhone} · Cover ID: {selected.qrCodeId || selected.txnId}<br />Available to refund: {formatMoney(selected.refundable)}</p>
                   <fieldset disabled={saving} className="space-y-3">
                     <div className="grid sm:grid-cols-2 gap-3">
                       <div><label htmlFor="refund-amount" className="label">Amount returned (₹)</label><input id="refund-amount" className="input" type="number" inputMode="decimal" min="0.01" max={selected.refundable} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} required /></div>
@@ -138,7 +138,7 @@ export function EventRefundsPanel({ eventId, refreshKey, onRecorded }: {
                   {data.refunds.map((refund) => (
                     <li key={refund.id} className="rounded-xl border border-slate-200 p-3 text-sm">
                       <div className="flex flex-wrap justify-between gap-2"><span className="font-medium">{refund.guestName}</span><span className="font-semibold text-rose-700">{formatMoney(refund.amount)} · {COLLECTION_METHODS.find((m) => m.value === refund.method)?.label}</span></div>
-                      <p className="text-xs text-slate-500 break-all">{refund.txnId} · {refund.id}</p>
+                      <p className="text-xs text-slate-500 break-all">Cover ID: {refund.qrCodeId || refund.txnId} · {refund.id}</p>
                       <p className="mt-2 break-words">{refund.reason}</p>
                       {refund.reference && <p className="text-xs text-slate-600 mt-1 break-words">Reference: {refund.reference}</p>}
                       <p className="text-xs text-slate-500 mt-1">Recorded by {refund.recordedBy} · {new Date(refund.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</p>

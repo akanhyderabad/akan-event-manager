@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth';
-import { lookupWallet } from '@/lib/wallet';
+import { lookupWallet, getWalletQrCode } from '@/lib/wallet';
 import { generatePassImage } from '@/lib/pdf/pass-image';
 import { getConfig } from '@/lib/db';
 import { getEvent } from '@/lib/events';
@@ -10,7 +10,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/wallets/[txnId]/image?qrCodeId=NNNN
+ * GET /api/wallets/[txnId]/image
  *
  * Returns a PNG of the cover-pass — optimised for WhatsApp inline delivery
  * and door-side QR scans. Same content as the PDF endpoint but rendered as
@@ -28,7 +28,6 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ txnId: stri
   }
 
   const { txnId } = await ctx.params;
-  const qrCodeId = req.nextUrl.searchParams.get('qrCodeId')?.trim() || '';
 
   const wallet = lookupWallet(txnId);
   if (!wallet) {
@@ -61,7 +60,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ txnId: stri
 
   const png = await generatePassImage({
     txnId,
-    qrCodeId: qrCodeId || undefined,
+    qrCodeId: getWalletQrCode(wallet.txn_id),
     guestName: wallet.name || 'Guest',
     coverAmount: wallet.cover_issued,
     eventName,

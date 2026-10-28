@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyWalletPassToken } from '@/lib/signed-url';
-import { lookupWallet } from '@/lib/wallet';
+import { lookupWallet, getWalletQrCode } from '@/lib/wallet';
 import { generatePassImage } from '@/lib/pdf/pass-image';
 import { getConfig } from '@/lib/db';
 import { getEvent } from '@/lib/events';
@@ -65,7 +65,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ token: str
 
   const png = await generatePassImage({
     txnId: payload.txnId,
-    qrCodeId: payload.qrCodeId,
+    qrCodeId: getWalletQrCode(wallet.txn_id),
     guestName: wallet.name || 'Guest',
     coverAmount: wallet.cover_issued,
     eventName,

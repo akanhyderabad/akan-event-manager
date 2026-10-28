@@ -36,7 +36,7 @@ const MARGIN_Y = 18;
 
 export interface PassPdfInput {
   txnId: string;
-  qrCodeId?: string;          // kept on API contract; not rendered
+  qrCodeId?: string;          // permanent short reference; never the guest PIN
   guestName: string;
   coverAmount: number;
   eventName?: string;
@@ -156,7 +156,7 @@ export async function generatePassPdf(input: PassPdfInput): Promise<Uint8Array> 
     font: helv, size: 10, center,
   });
   drawer.gap(4);
-  drawer.centered(truncateToWidth(helv, `Cover ID: ${input.txnId}`, contentWidth, 8), {
+  drawer.centered(truncateToWidth(helv, `Cover ID: ${input.qrCodeId || input.txnId}`, contentWidth, 8), {
     font: helv, size: 8, center,
   });
   drawer.gap(4);
